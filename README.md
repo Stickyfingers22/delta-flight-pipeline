@@ -2,7 +2,7 @@
 
 A batch data pipeline that ingests U.S. Bureau of Transportation Statistics (BTS) on-time performance data, models it into a star schema, tests it, and serves a delay dashboard, with a focus on Delta Air Lines.
 
-> **Status:** Step 1 of 11 — project setup. See [`docs/build-log.md`](docs/build-log.md) for progress and design decisions.
+> **Status:** Step 2 of 11 — raw ingestion. See [`docs/build-log.md`](docs/build-log.md) for progress and design decisions.
 
 ## Architecture (planned)
 
@@ -14,7 +14,7 @@ BTS monthly files ──► Python ingestion ──► raw Parquet ──► dbt
 
 | Layer | Tool | Status |
 |---|---|---|
-| Ingestion | Python, requests, Parquet | Step 2–3 |
+| Ingestion | Python, requests, Parquet | Step 2 ✓ · Step 3 |
 | Warehouse | DuckDB | Step 1 ✓ |
 | Modeling & tests | dbt | Steps 4–6 |
 | Orchestration | Dagster | Step 8 |
@@ -26,6 +26,7 @@ BTS monthly files ──► Python ingestion ──► raw Parquet ──► dbt
 ```bash
 make setup     # create .venv and install dependencies
 make test      # run tests
+make ingest YEAR=2024 MONTH=1   # download one month of BTS data
 ```
 
 Or with Docker:
@@ -39,7 +40,7 @@ docker compose run --rm pipeline
 ```
 src/delta_pipeline/   pipeline code
 tests/                pytest tests
-data/raw/             downloaded BTS files (not in git)
+data/raw/flights/period=YYYY-MM/   raw BTS data as Parquet (not in git)
 data/warehouse/       DuckDB database (not in git)
 docs/build-log.md     what was built in each step, and why
 ```

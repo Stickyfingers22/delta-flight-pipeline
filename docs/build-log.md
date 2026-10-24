@@ -33,3 +33,41 @@ One entry per step: what was built, why, and what to be able to explain in an in
 1. `make setup`
 2. `make test` → expect `3 passed`
 3. Break something on purpose (change `15.67` to `15.0` in `tests/test_setup.py`), run `make test`, read the failure, then fix it.
+
+---
+
+## Step 2 — Raw ingestion
+
+**What I built**
+- `src/delta_pipeline/ingest.py`: downloads one month of BTS on-time data, validates it, and saves it as Parquet at `data/raw/flights/period=YYYY-MM/flights.parquet`.
+- Run it with `make ingest YEAR=2024 MONTH=1`.
+- 8 new tests that use a small fake BTS file, so they run in under a second with no internet.
+
+**Design decisions**
+| Decision | Why |
+|---|---|
+| Keep all carriers, not just Delta | The dashboard compares Delta to other airlines. Filtering belongs in the model layer, not ingestion. You can't un-filter raw data later. |
+| Store every column as text | One odd value (e.g. `"NA"` in a number column) would crash typed ingestion. Raw stays faithful to the source; dbt staging (step 5) does the type casting, where bad values are easier to find and test. |
+| Add `_source_url` and `_ingested_at` | Lineage: any row can be traced back to the exact file and time it came from. |
+| Stream the download in 1 MB chunks | A month is roughly 100 MB zipped. Streaming keeps memory flat. |
+| Check it's really a zip | BTS returns an HTML page instead of an error for months not published yet. Without this check you'd save garbage silently. |
+| Check required columns exist | If BTS renames a column, fail now with a clear message instead of breaking dbt three steps later. |
+| Folder `period=2024-01` | Hive-style partitioning: DuckDB reads `period` from the folder name and can skip months a query doesn't need. Not `year=/month=`, because BTS already has `Year` and `Month` columns and DuckDB matches names case-insensitively, so they collide. A test caught this. |
+| Parquet with zstd compression | Columnar storage, far smaller and faster to query than CSV. |
+| Tests replace `download` (monkeypatch) | Tests shouldn't depend on a government website being up. They test *our* logic. |
+
+**Interview questions to be ready for**
+- *Why not filter to Delta during ingestion?* Raw data should be a faithful copy of the source. Filtering early is irreversible, and it would block comparisons with other carriers.
+- *Why store numbers as strings?* Schema-on-read: ingestion's job is to land the data reliably. Typing and cleaning happen in a tested transformation layer.
+- *How do you test code that downloads files?* Swap the network call for a fake that writes a known file (dependency injection via monkeypatch), then assert on the output.
+- *What's hive partitioning?* Encoding a column's value in the folder path (`period=2024-01/`), so query engines can skip whole folders.
+
+**Try it yourself**
+1. `make test` → expect `11 passed`.
+2. `make ingest YEAR=2024 MONTH=1` (downloads ~100 MB; takes a minute or two).
+3. Explore it:
+   ```bash
+   .venv/bin/python -c "import duckdb; print(duckdb.sql(\"SELECT Reporting_Airline, count(*) AS flights FROM 'data/raw/flights/*/*.parquet' GROUP BY 1 ORDER BY 2 DESC\"))"
+   ```
+   Delta (`DL`) should be near the top.
+4. Run step 2 again for the same month. What happens to the file? (Step 3 is about making that safe.)
