@@ -1,0 +1,10 @@
+# One command to run the pipeline in a container: `docker compose run --rm pipeline`
+services:
+  pipeline:
+    build: .
+    volumes:
+      # Data lives on your machine, not inside the container,
+      # so it survives when the container is removed.
+      - ./data:/app/data
+      - ./src:/app/src
+      - ./tests:/app/tests
