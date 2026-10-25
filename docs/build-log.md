@@ -71,3 +71,46 @@ One entry per step: what was built, why, and what to be able to explain in an in
    ```
    Delta (`DL`) should be near the top.
 4. Run step 2 again for the same month. What happens to the file? (Step 3 is about making that safe.)
+
+---
+
+## Step 2b — Real data: loading a BTS website export
+
+**What changed**
+- The primary source is now a CSV exported from the BTS website (`flight_delays_2025_11.csv`), dropped into `data/landing/`.
+- New `ingest_file()` with `make ingest-file FILE=...`. The downloader (`make ingest`) stays for scheduled monthly loads later.
+- Both paths share the same reading and writing code, so raw output is identical no matter where the data came from.
+- A file that spans several months is split into one `period=YYYY-MM` folder per month.
+- 4 new tests (15 total), including a two-month file and a file with a blank `FlightDate`.
+
+**First real run — November 2025**
+| Check | Result |
+|---|---|
+| Rows | 570,550 (all 30 days) |
+| Carriers | 14 |
+| Delta flights | 84,475 (2nd after Southwest) |
+| Size | 114 MB CSV → 11 MB Parquet |
+| Load time | ~2.5 seconds |
+| Departed 15+ min late (operated flights) | Delta 16.6% · United 18.2% · American 23.2% · Southwest 23.8% |
+
+**Known gap in this export**
+- 40 columns, no `Tail_Number`. Tail number identifies the physical aircraft, which is what you need to follow one plane through its day and measure delay cascades. Add it in future exports if we want that analysis.
+
+**Design decisions**
+| Decision | Why |
+|---|---|
+| Split by `FlightDate`, not by the file name | File names are human-made and unreliable (`_2.csv`). The data itself says which month each row belongs to. |
+| Reject blank or malformed `FlightDate` | A row with no date can't be placed in a partition; better to stop than drop it silently. |
+| `_source` = `file:<name>` or the URL | Lineage works the same for both sources. |
+| Read the header with `utf-8-sig` | Excel-saved CSVs often start with an invisible byte-order mark that would corrupt the first column name. |
+| Data stays out of git | GitHub rejects files over 100 MB, and data belongs in storage, not version control. The README explains how to reproduce it. |
+
+**Interview questions to be ready for**
+- *How does your pipeline handle different source formats?* Separate readers for each format, all producing the same Arrow table, then one shared writer. Adding a source means writing a reader, not touching the rest.
+- *What if a file has more than one month?* It's split by the date in each row, and each month lands in its own partition.
+
+**Try it yourself**
+1. `git pull`, then `make test` → expect `15 passed`.
+2. Move your CSV into `data/landing/` and name it `flight_delays_2025_11.csv`.
+3. `make ingest-file` (the default `FILE` points at that name).
+4. Run the DuckDB query from Step 2 and compare your carrier counts to the table above.

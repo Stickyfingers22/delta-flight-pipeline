@@ -2,12 +2,12 @@
 
 A batch data pipeline that ingests U.S. Bureau of Transportation Statistics (BTS) on-time performance data, models it into a star schema, tests it, and serves a delay dashboard, with a focus on Delta Air Lines.
 
-> **Status:** Step 2 of 11 — raw ingestion. See [`docs/build-log.md`](docs/build-log.md) for progress and design decisions.
+> **Status:** Step 2 of 11 — raw ingestion. First real month loaded: November 2025, 570,550 flights, 14 carriers. See [`docs/build-log.md`](docs/build-log.md) for progress and design decisions.
 
 ## Architecture (planned)
 
 ```
-BTS monthly files ──► Python ingestion ──► raw Parquet ──► dbt (DuckDB) ──► marts ──► dashboard
+BTS CSV export / monthly zip ──► Python ingestion ──► raw Parquet ──► dbt (DuckDB) ──► marts ──► dashboard
                                                     ▲
                               Dagster: monthly schedule, ingest → dbt run → dbt test
 ```
@@ -26,7 +26,7 @@ BTS monthly files ──► Python ingestion ──► raw Parquet ──► dbt
 ```bash
 make setup     # create .venv and install dependencies
 make test      # run tests
-make ingest YEAR=2024 MONTH=1   # download one month of BTS data
+make ingest-file FILE=data/landing/flight_delays_2025_11.csv   # load a BTS export
 ```
 
 Or with Docker:
@@ -35,12 +35,19 @@ Or with Docker:
 docker compose run --rm pipeline
 ```
 
+## Data
+
+Source: [BTS Reporting Carrier On-Time Performance](https://www.transtats.bts.gov/DL_SelectFields.aspx?gnoyr_VQ=FGJ&QO_fu146_anzr=b0-gvzr), one CSV per month, all U.S. carriers. Data files are not committed (a month is ~115 MB of CSV).
+
+To reproduce: export a month from the BTS site, save it to `data/landing/`, then run `make ingest-file FILE=data/landing/<file>.csv`.
+
 ## Project layout
 
 ```
 src/delta_pipeline/   pipeline code
 tests/                pytest tests
-data/raw/flights/period=YYYY-MM/   raw BTS data as Parquet (not in git)
+data/landing/         BTS CSV exports you drop in (not in git)
+data/raw/flights/period=YYYY-MM/   raw layer as Parquet (not in git)
 data/warehouse/       DuckDB database (not in git)
 docs/build-log.md     what was built in each step, and why
 ```

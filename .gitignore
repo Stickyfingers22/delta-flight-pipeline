@@ -1,9 +1,13 @@
 # Data never goes in git: it's large and can always be re-downloaded
+data/landing/*
 data/raw/*
 data/warehouse/*
+!data/landing/.gitkeep
 !data/raw/.gitkeep
 !data/warehouse/.gitkeep
 *.parquet
+*.csv
+!tests/fixtures/*.csv
 *.duckdb
 *.duckdb.wal
 

@@ -57,7 +57,7 @@ def test_ingest_month_writes_raw_parquet(tmp_path, monkeypatch):
     assert all(f.type == pa.string() for f in table.schema)      # everything stored as text
     assert table.column("DepDelay").to_pylist()[0] == "12.00"    # values untouched
     assert table.column("DepDelay").to_pylist()[2] is None       # blanks become null
-    assert "_source_url" in table.column_names and "_ingested_at" in table.column_names
+    assert "_source" in table.column_names and "_ingested_at" in table.column_names
     assert not any(c.strip() == "" for c in table.column_names)  # trailing empty column dropped
 
 
@@ -72,3 +72,46 @@ def test_missing_required_column_raises(tmp_path, monkeypatch):
     monkeypatch.setattr(ingest, "download", fake_downloader(csv_text=bad_csv))
     with pytest.raises(ingest.IngestionError, match="Reporting_Airline"):
         ingest.ingest_month(2024, 1, tmp_path)
+
+
+# ── Local file path (BTS website export) ──────────────────────────────────────
+
+# Website exports have no trailing comma and quote city names that contain commas.
+EXPORT_CSV = (
+    "Year,Month,FlightDate,Reporting_Airline,Origin,OriginCityName,Dest,DepDelay,ArrDelay\n"
+    '2025,11,2025-11-01,DL,ATL,"Atlanta, GA",JFK,5.00,2.00\n'
+    '2025,11,2025-11-30,WN,DAL,"Dallas, TX",HOU,,\n'
+)
+
+
+def test_ingest_file_writes_one_month(tmp_path):
+    src = tmp_path / "export.csv"
+    src.write_text(EXPORT_CSV)
+    outs = ingest.ingest_file(src, tmp_path / "raw")
+
+    assert outs == [ingest.output_path(2025, 11, tmp_path / "raw")]
+    table = pq.read_table(outs[0], partitioning=None)
+    assert table.num_rows == 2
+    assert table.column("OriginCityName").to_pylist()[0] == "Atlanta, GA"  # quoted comma kept
+    assert table.column("_source").to_pylist()[0] == "file:export.csv"
+
+
+def test_ingest_file_splits_multiple_months(tmp_path):
+    src = tmp_path / "two_months.csv"
+    src.write_text(EXPORT_CSV + "2025,12,2025-12-01,DL,ATL,\"Atlanta, GA\",LAX,0.00,0.00\n")
+    outs = ingest.ingest_file(src, tmp_path / "raw")
+
+    assert [o.parent.name for o in outs] == ["period=2025-11", "period=2025-12"]
+    assert [pq.read_table(o, partitioning=None).num_rows for o in outs] == [2, 1]
+
+
+def test_ingest_file_rejects_bad_flight_dates(tmp_path):
+    src = tmp_path / "bad.csv"
+    src.write_text(EXPORT_CSV + "2025,11,,DL,ATL,\"Atlanta, GA\",LAX,0.00,0.00\n")
+    with pytest.raises(ingest.IngestionError, match="FlightDate"):
+        ingest.ingest_file(src, tmp_path / "raw")
+
+
+def test_ingest_file_missing_file(tmp_path):
+    with pytest.raises(ingest.IngestionError, match="not found"):
+        ingest.ingest_file(tmp_path / "nope.csv", tmp_path / "raw")
