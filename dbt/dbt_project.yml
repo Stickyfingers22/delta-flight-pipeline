@@ -1,0 +1,33 @@
+name: delta_flights
+version: "0.1.0"
+config-version: 2
+profile: delta_flights
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages", "logs"]
+
+models:
+  delta_flights:
+    staging:
+      +materialized: view     # cheap: just a cleaned-up lens over the raw Parquet
+      +schema: staging
+    marts:
+      +materialized: table    # stored: dashboards and the ML project read these
+      +schema: marts
+
+seeds:
+  delta_flights:
+    +schema: reference
+    carriers:
+      +column_types:
+        carrier_code: varchar
+        carrier_name: varchar
+        carrier_type: varchar
+    us_holidays:
+      +column_types:
+        holiday_date: date
+        holiday_name: varchar

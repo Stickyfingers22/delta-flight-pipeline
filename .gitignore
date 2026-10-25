@@ -8,6 +8,7 @@ data/warehouse/*
 *.parquet
 *.csv
 !tests/fixtures/*.csv
+!dbt/seeds/*.csv
 *.duckdb
 *.duckdb.wal
 
@@ -23,6 +24,7 @@ venv/
 dbt/target/
 dbt/dbt_packages/
 dbt/logs/
+dbt/.user.yml
 
 # Dagster (added in step 8)
 .dagster/

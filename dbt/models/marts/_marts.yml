@@ -1,0 +1,31 @@
+version: 2
+
+models:
+  - name: fct_flights
+    description: >
+      One row per scheduled flight leg (completed, cancelled or diverted).
+      Keys to dim_date, dim_carrier and dim_airport (twice: origin and destination).
+    columns:
+      - name: flight_id
+        description: Primary key. Hash of the natural key.
+      - name: date_key
+        description: YYYYMMDD. Joins to dim_date.
+      - name: carrier_code
+        description: Operating carrier. DL is Delta mainline only. Joins to dim_carrier.
+      - name: origin_airport_code
+        description: Joins to dim_airport.
+      - name: dest_airport_code
+        description: Joins to dim_airport.
+      - name: arr_delay_min
+        description: Arrival delay in minutes, negative if early. Null for cancelled and diverted flights.
+      - name: is_arr_delayed_15
+        description: True if the flight arrived 15+ minutes late (the industry on-time definition).
+
+  - name: dim_carrier
+    description: One row per airline in the data. Names from the carriers seed; unmatched codes show as Unknown.
+
+  - name: dim_airport
+    description: One row per airport seen as an origin or destination. Latest city name wins (SCD Type 1).
+
+  - name: dim_date
+    description: One row per calendar day for every full year covered by the data, with US federal holidays.

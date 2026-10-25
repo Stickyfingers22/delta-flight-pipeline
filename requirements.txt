@@ -5,3 +5,5 @@ pandas==2.2.3         # light data handling
 pyarrow==18.1.0       # read/write Parquet
 duckdb==1.1.3         # local analytical database (the warehouse)
 pytest==8.3.4         # tests
+dbt-core==1.9.11      # SQL transformations: staging and marts (step 5)
+dbt-duckdb==1.9.6     # lets dbt build tables inside DuckDB

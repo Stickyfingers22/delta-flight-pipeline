@@ -1,0 +1,10 @@
+# Connection settings. Kept in the repo because DuckDB is a local file with no
+# password. With a real warehouse (Snowflake, Databricks) this file would live
+# outside the repo and read credentials from environment variables.
+delta_flights:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: ../data/warehouse/delta.duckdb
+      threads: 4

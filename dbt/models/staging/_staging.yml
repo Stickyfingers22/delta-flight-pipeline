@@ -1,0 +1,14 @@
+version: 2
+
+models:
+  - name: stg_flights
+    description: >
+      Raw flights renamed to snake_case and cast to real types. One row per raw row.
+      Times are local airport time; "2400" is converted to 00:00.
+    columns:
+      - name: flight_id
+        description: md5 of flight date, carrier, flight number and origin (the natural key).
+      - name: flight_status
+        description: completed, cancelled or diverted.
+      - name: cancellation_reason
+        description: carrier, weather, national air system or security. Null unless cancelled.
