@@ -1,12 +1,12 @@
 # Short names for commands you'll run often. `make help` lists them.
-.PHONY: help setup test docker-test ingest ingest-file profile transform pipeline clean
+.PHONY: help setup test docker-test ingest ingest-file profile transform dbt-test build pipeline clean
 
 YEAR ?= 2025
 MONTH ?= 11
 FILE ?= data/landing/flight_delays_2025_11.csv
 FORCE ?=
 FORCE_FLAG = $(if $(FORCE),--force,)
-DBT = cd dbt && ../.venv/bin/dbt
+DBT = .venv/bin/dbt
 
 help:
 	@echo "setup        Create .venv and install dependencies"
@@ -16,7 +16,9 @@ help:
 	@echo "ingest       Download one month from BTS: make ingest YEAR=2025 MONTH=11"
 	@echo "profile      Check the raw data against the data-model assumptions"
 	@echo "transform    Build staging + marts with dbt (seed, run)"
-	@echo "pipeline     Load the file, then build the marts"
+	@echo "dbt-test     Run dbt unit tests and data tests"
+	@echo "build        dbt seed + run + test in dependency order (stops on failure)"
+	@echo "pipeline     Load the file, then dbt build"
 	@echo "clean        Delete downloaded data and the local warehouse"
 
 setup:
@@ -40,10 +42,16 @@ profile:
 	PYTHONPATH=src .venv/bin/python -m delta_pipeline.profile
 
 transform:
-	$(DBT) seed --profiles-dir .
-	$(DBT) run --profiles-dir .
+	$(DBT) seed --project-dir dbt --profiles-dir dbt
+	$(DBT) run --project-dir dbt --profiles-dir dbt
 
-pipeline: ingest-file transform
+dbt-test:
+	$(DBT) test --project-dir dbt --profiles-dir dbt
+
+build:
+	$(DBT) build --project-dir dbt --profiles-dir dbt
+
+pipeline: ingest-file build
 
 clean:
 	find data/raw data/warehouse -type f ! -name .gitkeep -delete

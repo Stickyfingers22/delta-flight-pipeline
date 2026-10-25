@@ -10,6 +10,9 @@ test-paths: ["tests"]
 target-path: "target"
 clean-targets: ["target", "dbt_packages", "logs"]
 
+on-run-start:
+  - "{{ create_raw_views() }}"
+
 models:
   delta_flights:
     staging:

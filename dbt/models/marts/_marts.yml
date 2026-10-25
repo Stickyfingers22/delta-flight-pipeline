@@ -7,25 +7,83 @@ models:
       Keys to dim_date, dim_carrier and dim_airport (twice: origin and destination).
     columns:
       - name: flight_id
-        description: Primary key. Hash of the natural key.
+        description: Primary key. Hash of the natural key (date, carrier, flight number, origin).
+        data_tests: [unique, not_null]
       - name: date_key
         description: YYYYMMDD. Joins to dim_date.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments: {to: ref('dim_date'), field: date_key}
       - name: carrier_code
         description: Operating carrier. DL is Delta mainline only. Joins to dim_carrier.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments: {to: ref('dim_carrier'), field: carrier_code}
       - name: origin_airport_code
         description: Joins to dim_airport.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments: {to: ref('dim_airport'), field: airport_code}
       - name: dest_airport_code
         description: Joins to dim_airport.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments: {to: ref('dim_airport'), field: airport_code}
+      - name: flight_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments: {values: [completed, cancelled, diverted]}
+      - name: cancellation_reason
+        description: Null unless the flight was cancelled.
+        data_tests:
+          - accepted_values:
+              arguments: {values: [carrier, weather, national air system, security]}
+      - name: scheduled_dep_hour
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments: {values: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]}
       - name: arr_delay_min
         description: Arrival delay in minutes, negative if early. Null for cancelled and diverted flights.
       - name: is_arr_delayed_15
         description: True if the flight arrived 15+ minutes late (the industry on-time definition).
+      - name: distance_miles
+        data_tests: [not_null]
 
   - name: dim_carrier
     description: One row per airline in the data. Names from the carriers seed; unmatched codes show as Unknown.
+    columns:
+      - name: carrier_code
+        data_tests: [unique, not_null]
+      - name: carrier_name
+        data_tests: [not_null]
+      - name: carrier_type
+        description: "'unknown' means the code is missing from seeds/carriers.csv, so this test fails until it's added."
+        data_tests:
+          - accepted_values:
+              arguments: {values: [mainline, regional, low-cost]}
 
   - name: dim_airport
     description: One row per airport seen as an origin or destination. Latest city name wins (SCD Type 1).
+    columns:
+      - name: airport_code
+        data_tests: [unique, not_null]
+      - name: city_name
+        data_tests: [not_null]
 
   - name: dim_date
     description: One row per calendar day for every full year covered by the data, with US federal holidays.
+    columns:
+      - name: date_key
+        data_tests: [unique, not_null]
+      - name: full_date
+        data_tests: [unique, not_null]
+      - name: day_of_week
+        data_tests:
+          - accepted_values:
+              arguments: {values: [1, 2, 3, 4, 5, 6, 7]}

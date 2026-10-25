@@ -6,5 +6,5 @@ delta_flights:
   outputs:
     dev:
       type: duckdb
-      path: ../data/warehouse/delta.duckdb
+      path: data/warehouse/delta.duckdb   # relative to the repo root, where dbt runs
       threads: 4

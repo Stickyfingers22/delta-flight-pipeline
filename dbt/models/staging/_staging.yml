@@ -8,7 +8,52 @@ models:
     columns:
       - name: flight_id
         description: md5 of flight date, carrier, flight number and origin (the natural key).
+        data_tests: [unique, not_null]
       - name: flight_status
         description: completed, cancelled or diverted.
       - name: cancellation_reason
         description: carrier, weather, national air system or security. Null unless cancelled.
+
+# Unit tests check the transformation logic on a few hand-made rows, before any real
+# data is involved. Data tests (above and in tests/) check the real data after the build.
+unit_tests:
+  - name: stg_flights_converts_hhmm_times
+    description: '"0705" becomes 07:05, "2400" (end-of-day midnight) becomes 00:00, blanks stay null.'
+    model: stg_flights
+    given:
+      - input: source('raw', 'flights')
+        rows:
+          - {FlightDate: "2025-11-01", Reporting_Airline: DL, Flight_Number_Reporting_Airline: "100", Origin: ATL, CRSDepTime: "0705", DepTime: "2400", ArrTime: null}
+    expect:
+      rows:
+        - {scheduled_dep_time: "07:05:00", actual_dep_time: "00:00:00", actual_arr_time: null}
+
+  - name: stg_flights_derives_status_and_reason
+    description: Cancelled wins over diverted; codes A-D map to readable reasons.
+    model: stg_flights
+    given:
+      - input: source('raw', 'flights')
+        rows:
+          - {FlightDate: "2025-11-01", Reporting_Airline: DL, Flight_Number_Reporting_Airline: "1", Origin: ATL, Cancelled: "0.00", Diverted: "0.00", CancellationCode: null}
+          - {FlightDate: "2025-11-01", Reporting_Airline: DL, Flight_Number_Reporting_Airline: "2", Origin: ATL, Cancelled: "1.00", Diverted: "0.00", CancellationCode: "B"}
+          - {FlightDate: "2025-11-01", Reporting_Airline: DL, Flight_Number_Reporting_Airline: "3", Origin: ATL, Cancelled: "0.00", Diverted: "1.00", CancellationCode: null}
+          - {FlightDate: "2025-11-01", Reporting_Airline: DL, Flight_Number_Reporting_Airline: "4", Origin: ATL, Cancelled: "1.00", Diverted: "0.00", CancellationCode: "C"}
+    expect:
+      rows:
+        - {flight_number: "1", flight_status: completed, cancellation_reason: null}
+        - {flight_number: "2", flight_status: cancelled, cancellation_reason: weather}
+        - {flight_number: "3", flight_status: diverted,  cancellation_reason: null}
+        - {flight_number: "4", flight_status: cancelled, cancellation_reason: national air system}
+
+  - name: stg_flights_flight_id_includes_origin
+    description: Same date, carrier and flight number but different origins (a multi-leg flight) get different ids.
+    model: stg_flights
+    given:
+      - input: source('raw', 'flights')
+        rows:
+          - {FlightDate: "2025-11-01", Reporting_Airline: DL, Flight_Number_Reporting_Airline: "100", Origin: ATL}
+          - {FlightDate: "2025-11-01", Reporting_Airline: DL, Flight_Number_Reporting_Airline: "100", Origin: JFK}
+    expect:
+      rows:
+        - {origin_airport_code: ATL, flight_id: bce389b97f834eb6264bbdcbd40a48e9}
+        - {origin_airport_code: JFK, flight_id: bbc20d138d874e35f2894cb433e7ca20}

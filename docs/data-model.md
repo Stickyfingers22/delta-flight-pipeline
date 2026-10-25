@@ -94,7 +94,7 @@ Cancelled flights stay in the fact table. Dropping them would hide 14,195 of the
 | Diverted flights never have an arrival delay | 0 of 1,059 |
 | Some cancelled flights *do* have a departure delay | 258 left the gate, then were cancelled. Not an error |
 | Every flight arriving 15+ min late has cause minutes | 0 missing of 114,170 |
-| Cause minutes add up to the arrival delay | All but 11 of 114,170 (rounding), so the test allows ±1 minute |
+| Cause minutes add up to the arrival delay | All but 11 of 114,170. The 11 are Southwest flights 93–820 minutes late that reported 0 for every cause: a gap in the source, not rounding. The test warns on them and fails above 100 |
 
 **Formats staging must handle:** times stored as `"HHMM"` text. Actual times use `"2400"` for midnight 335 times (43 departures, 292 arrivals), which must become `00:00`; scheduled times never do. No delay value failed to parse as a number.
 

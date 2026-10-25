@@ -177,7 +177,7 @@ One entry per step: what was built, why, and what to be able to explain in an in
 | Are airline names in the data? | No, only codes | Names come from a reference CSV (dbt seed, step 5) |
 | Do cancelled flights have arrival delays? | Never | Becomes a dbt test |
 | …departure delays? | 258 do | They left the gate first. Not an error, so no test against it |
-| Do cause minutes add up to the arrival delay? | All but 11 of 114,170 | Test allows ±1 minute for rounding |
+| Do cause minutes add up to the arrival delay? | All but 11 of 114,170 | *Corrected in step 6:* not rounding. All 11 are Southwest flights that reported 0 for every cause. The test warns instead of failing |
 
 **Interview questions to be ready for**
 - *What's the grain of your fact table?* One row per scheduled flight leg, including cancellations and diversions. I chose it after finding that flight numbers repeat across legs on the same day.
@@ -256,3 +256,47 @@ Run it with `make transform` (or `make pipeline` to load the file first).
    .venv/bin/python -c "import duckdb; c=duckdb.connect('data/warehouse/delta.duckdb', read_only=True); print(c.sql(\"SELECT c.carrier_name, count(*) AS flights, round(100*avg(f.is_arr_delayed_15::int),1) AS pct_late FROM marts.fct_flights f JOIN marts.dim_carrier c USING (carrier_code) WHERE f.flight_status='completed' GROUP BY 1 ORDER BY 3\"))"
    ```
 4. Open `dbt/models/staging/stg_flights.sql` and find where `"2400"` is handled (hint: it's in a macro).
+
+---
+
+## Step 6 — Testing the data with dbt
+
+**First: upgrade dbt (and fix a path bug)**
+- dbt 1.9 printed a deprecation warning, so I upgraded to **dbt-core 1.12.5, dbt-duckdb 1.11.0 and DuckDB 1.5.6**. I picked the newest releases at least two weeks old; DuckDB 2.0 was only days old.
+- **Proof the upgrade changed nothing:** I rebuilt the warehouse with the old versions and compared row by row (`EXCEPT ALL` both ways). 0 rows differ in any of the four marts, and column names and types match. (A first attempt hashed whole rows; the hashes differed only because DuckDB 1.5 prints text differently, which is why I switched to a row comparison.)
+- **Bug fixed:** the staging view found the data with a path relative to `dbt/`, so it broke when queried from the repo root. dbt now runs from the root (`--project-dir dbt`), and a macro creates a `raw.flights` view over the Parquet files at the start of every run.
+
+**What I built: 50 checks, run by `make build`**
+| Kind | Count | Examples |
+|---|---|---|
+| Unit tests (fake input rows, check the logic) | 3 | `"2400"` → 00:00 · cancelled beats diverted · multi-leg flights get different ids |
+| Generic data tests (YAML) | ~30 | `flight_id` unique and not null · every fact row joins to each dimension · `flight_status` only completed/cancelled/diverted · no unknown airlines |
+| Business-rule tests (SQL in `dbt/tests/`) | 9 | row count matches raw · every day of the month present · no arrival delay unless completed · flags match minutes · causes add up to arrival delay |
+
+`dbt build` runs seeds, models and tests in dependency order and stops downstream models when a test fails, so bad data never reaches the marts.
+
+**Result on November 2025:** 49 pass, 1 warns.
+
+**A finding: the warning is real.** I wrote in step 4 that 11 flights' causes didn't add up "because of rounding". Writing this test showed that was wrong: all 11 are **Southwest flights 93–820 minutes late that reported 0 minutes for every cause**. That's a reporting gap in the source. The test uses `warn_if: '>0'` and `error_if: '>100'`: these known cases show up as a warning, and the build fails only if the problem grows. Step 4's docs are corrected.
+
+**Testing the tests (mutation testing)**
+I broke the project five ways on purpose. Each was caught:
+| Bug introduced | Caught by |
+|---|---|
+| Drop `Origin` from `flight_id` (wrong grain) | unit test `stg_flights_flight_id_includes_origin` · with unit tests off, data test `unique_stg_flights_flight_id` still catches it |
+| Forget the `"2400"` rule | unit test `stg_flights_converts_hhmm_times` |
+| Airline missing from `carriers.csv` | `accepted_values` on `dim_carrier.carrier_type` (it becomes `unknown`) |
+| Drop cancelled flights from the fact | `assert_fact_row_count_matches_raw` |
+| Change the delay flag to 30 minutes | `assert_delay_flags_match_minutes` |
+
+**Interview questions to be ready for**
+- *Unit tests vs data tests?* Unit tests check **logic** on tiny hand-made inputs before the model builds ("does `2400` become midnight?"). Data tests check the **real data** after the build ("are all 570,550 ids unique?"). One catches code bugs, the other catches data problems.
+- *What's a relationships test?* It checks every foreign key in the fact table exists in the dimension: no flight points to an airport that isn't in `dim_airport`.
+- *What do you do with a test that fails on real but legitimate data?* Investigate first (here: Southwest's zero causes), document it, and set a threshold: warn on known cases, fail if it grows. Don't delete the test.
+- *How did you prove a version upgrade was safe?* Built both versions and compared outputs row by row with `EXCEPT ALL` in both directions.
+
+**Try it yourself**
+1. `git pull`, then `make setup` (installs the new dbt and DuckDB versions).
+2. `make build` → expect `PASS=49 WARN=1 ERROR=0`.
+3. Read `dbt/tests/assert_cause_minutes_sum_to_arrival_delay.sql` and explain the warning in your own words.
+4. Break something: delete the `YX` line from `dbt/seeds/carriers.csv`, run `make build`, read which test fails, then `git checkout dbt/seeds/carriers.csv`.

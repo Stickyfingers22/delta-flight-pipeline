@@ -2,11 +2,11 @@ version: 2
 
 sources:
   - name: raw
-    description: Raw layer written by src/delta_pipeline/ingest.py. Every column is text.
+    schema: raw
+    description: >
+      Raw layer written by src/delta_pipeline/ingest.py. Every column is text.
+      raw.flights is a view over the Parquet files, created by the create_raw_views
+      macro at the start of every dbt run. Nothing is copied.
     tables:
       - name: flights
         description: BTS on-time performance, one Parquet file per month, all carriers.
-        meta:
-          # dbt-duckdb reads the Parquet files in place; nothing is copied.
-          # The path is relative to the dbt/ folder, where dbt runs.
-          external_location: "read_parquet('../data/raw/flights/*/*.parquet', hive_partitioning = true)"
