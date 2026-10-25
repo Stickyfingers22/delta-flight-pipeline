@@ -1,5 +1,5 @@
 # Short names for commands you'll run often. `make help` lists them.
-.PHONY: help setup test docker-test ingest ingest-file clean
+.PHONY: help setup test docker-test ingest ingest-file profile clean
 
 YEAR ?= 2025
 MONTH ?= 11
@@ -13,6 +13,7 @@ help:
 	@echo "docker-test  Run tests inside Docker"
 	@echo "ingest-file  Load a BTS CSV export: make ingest-file FILE=data/landing/<file>.csv [FORCE=1]"
 	@echo "ingest       Download one month from BTS: make ingest YEAR=2025 MONTH=11"
+	@echo "profile      Check the raw data against the data-model assumptions"
 	@echo "clean        Delete downloaded data and the local warehouse"
 
 setup:
@@ -30,6 +31,9 @@ ingest-file:
 
 ingest:
 	PYTHONPATH=src .venv/bin/python -m delta_pipeline.ingest --year $(YEAR) --month $(MONTH) $(FORCE_FLAG)
+
+profile:
+	PYTHONPATH=src .venv/bin/python -m delta_pipeline.profile
 
 clean:
 	find data/raw data/warehouse -type f ! -name .gitkeep -delete

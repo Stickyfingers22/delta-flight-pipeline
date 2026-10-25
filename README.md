@@ -2,7 +2,7 @@
 
 A batch data pipeline that ingests U.S. Bureau of Transportation Statistics (BTS) on-time performance data, models it into a star schema, tests it, and serves a delay dashboard, with a focus on Delta Air Lines.
 
-> **Status:** Step 3 of 11 — idempotent ingestion. First real month loaded: November 2025, 570,550 flights, 14 carriers. See [`docs/build-log.md`](docs/build-log.md) for progress and design decisions.
+> **Status:** Step 4 of 11 — data model designed ([`docs/data-model.md`](docs/data-model.md)). First real month loaded: November 2025, 570,550 flights, 14 carriers. See [`docs/build-log.md`](docs/build-log.md) for progress and design decisions.
 
 ## Architecture (planned)
 
@@ -16,7 +16,8 @@ BTS CSV export / monthly zip ──► Python ingestion ──► raw Parquet �
 |---|---|---|
 | Ingestion | Python, requests, Parquet | Steps 2–3 ✓ |
 | Warehouse | DuckDB | Step 1 ✓ |
-| Modeling & tests | dbt | Steps 4–6 |
+| Data model design | star schema | Step 4 ✓ |
+| Modeling & tests | dbt | Steps 5–6 |
 | Orchestration | Dagster | Step 8 |
 | CI | GitHub Actions | Step 9 |
 | Dashboard | Streamlit | Step 10 |
@@ -53,4 +54,5 @@ data/landing/         BTS CSV exports you drop in (not in git)
 data/raw/flights/period=YYYY-MM/   raw layer as Parquet (not in git)
 data/warehouse/       DuckDB database (not in git)
 docs/build-log.md     what was built in each step, and why
+docs/data-model.md    star schema spec, grain, keys and the evidence behind them
 ```

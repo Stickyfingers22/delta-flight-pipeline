@@ -154,3 +154,40 @@ One entry per step: what was built, why, and what to be able to explain in an in
 2. `make ingest-file` twice. The second run should say `Skipping ... already loaded`.
 3. `make ingest-file FORCE=1`, then open `data/raw/flights/_manifest.json` and find the row count and fingerprint.
 4. Optional: repeat the mutation test yourself. In `write_raw`, change `pq.write_table(table, tmp, ...)` to write to `out`, delete the `os.replace` line, run `make test`, see which test fails, then `git checkout src/` to undo.
+
+---
+
+## Step 4 — Data model design
+
+**What I built**
+- [`docs/data-model.md`](data-model.md): the star schema spec, with a diagram that renders on GitHub, plus the grain, keys, column rules and trade-offs.
+- `src/delta_pipeline/profile.py` (`make profile`): checks every assumption in the spec against the real data, so the design can be re-verified each month.
+- 1 new test (24 total) on a small file built to include a multi-leg flight, a cancellation and a diversion.
+
+**The model**
+- `fct_flights`: one row per scheduled flight leg (completed, cancelled or diverted).
+- `dim_date` (generated), `dim_carrier` (reference CSV), `dim_airport` (derived from the data, used twice as origin and destination).
+
+**What the data proved**
+| Question | Answer | Consequence |
+|---|---|---|
+| Is date + airline + flight number unique? | No: 95,715 repeats | One flight number flies several legs. Add `Origin` to the key |
+| Is date + airline + flight number + origin unique? | Yes: 0 repeats | That's the natural key; `flight_id` = its hash |
+| Do airports have consistent names? | 340 airports, 0 conflicts | `dim_airport` can be a simple distinct |
+| Are airline names in the data? | No, only codes | Names come from a reference CSV (dbt seed, step 5) |
+| Do cancelled flights have arrival delays? | Never | Becomes a dbt test |
+| …departure delays? | 258 do | They left the gate first. Not an error, so no test against it |
+| Do cause minutes add up to the arrival delay? | All but 11 of 114,170 | Test allows ±1 minute for rounding |
+
+**Interview questions to be ready for**
+- *What's the grain of your fact table?* One row per scheduled flight leg, including cancellations and diversions. I chose it after finding that flight numbers repeat across legs on the same day.
+- *Fact vs dimension?* Facts are events with measurements (a flight and its delay minutes). Dimensions describe the context you filter and group by (which airline, which airport, which day).
+- *What's a role-playing dimension?* One dimension used in several roles. `dim_airport` serves as both origin and destination.
+- *Why keep cancelled flights?* Dropping them would bias every average and hide the cancellation rate, one of the main KPIs.
+- *Why is "Delta" only Delta mainline here?* BTS reports the operating airline. Delta Connection flights flown by partners like SkyWest appear under the partner's code, and this export has no marketing-carrier column.
+
+**Try it yourself**
+1. `git pull`, then `make test` → expect `24 passed`.
+2. `make profile` and compare the output to the "What the data proved" table.
+3. Open `docs/data-model.md` on GitHub to see the diagram render.
+4. Explain the grain out loud in one sentence, including *why* `Origin` is in the key. That sentence is a likely interview question.
