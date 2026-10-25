@@ -2,7 +2,7 @@
 
 A batch data pipeline that ingests U.S. Bureau of Transportation Statistics (BTS) on-time performance data, models it into a star schema, tests it, and serves a delay dashboard, with a focus on Delta Air Lines.
 
-> **Status:** Step 2 of 11 — raw ingestion. First real month loaded: November 2025, 570,550 flights, 14 carriers. See [`docs/build-log.md`](docs/build-log.md) for progress and design decisions.
+> **Status:** Step 3 of 11 — idempotent ingestion. First real month loaded: November 2025, 570,550 flights, 14 carriers. See [`docs/build-log.md`](docs/build-log.md) for progress and design decisions.
 
 ## Architecture (planned)
 
@@ -14,7 +14,7 @@ BTS CSV export / monthly zip ──► Python ingestion ──► raw Parquet �
 
 | Layer | Tool | Status |
 |---|---|---|
-| Ingestion | Python, requests, Parquet | Step 2 ✓ · Step 3 |
+| Ingestion | Python, requests, Parquet | Steps 2–3 ✓ |
 | Warehouse | DuckDB | Step 1 ✓ |
 | Modeling & tests | dbt | Steps 4–6 |
 | Orchestration | Dagster | Step 8 |
@@ -27,7 +27,10 @@ BTS CSV export / monthly zip ──► Python ingestion ──► raw Parquet �
 make setup     # create .venv and install dependencies
 make test      # run tests
 make ingest-file FILE=data/landing/flight_delays_2025_11.csv   # load a BTS export
+make ingest-file FORCE=1   # reload even if unchanged
 ```
+
+Ingestion is safe to re-run: unchanged files are skipped, changed files replace their month, and a crash never leaves a partial file.
 
 Or with Docker:
 

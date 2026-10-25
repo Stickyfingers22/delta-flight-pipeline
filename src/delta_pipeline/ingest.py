@@ -11,8 +11,15 @@ Raw layer rules:
     so a weird value in one month can never break ingestion.
   - Add metadata columns so every row can be traced to its source.
 
+Safe to re-run (idempotent):
+  - Each month is one file, written to a temp file and swapped in at the end,
+    so a crash never leaves a half-written file and a re-run never duplicates rows.
+  - A manifest records a fingerprint (SHA-256) of each source. Loading the same
+    file again is skipped unless --force is given.
+
 Usage:
     python -m delta_pipeline.ingest --file data/landing/flight_delays_2025_11.csv
+    python -m delta_pipeline.ingest --file data/landing/flight_delays_2025_11.csv --force
     python -m delta_pipeline.ingest --year 2025 --month 11
 """
 
@@ -20,10 +27,14 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import io
+import json
 import logging
+import os
 import re
 import tempfile
+import uuid
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -127,22 +138,94 @@ def split_by_period(table: pa.Table) -> dict[str, pa.Table]:
 
 
 def write_raw(table: pa.Table, period: str, raw_dir: Path = RAW_DIR) -> Path:
+    """Atomically replace one month's file.
+
+    Write to a hidden temp file in the same folder, check it, then rename it over
+    the old file. A rename within one folder is all-or-nothing, so readers see
+    either the old month or the new month, never a partial file.
+    """
     year, month = map(int, period.split("-"))
     out = output_path(year, month, raw_dir)
     out.parent.mkdir(parents=True, exist_ok=True)
-    pq.write_table(table, out, compression="zstd")
+    tmp = out.with_name(f".{out.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        pq.write_table(table, tmp, compression="zstd")
+        written = pq.read_metadata(tmp).num_rows
+        if written != table.num_rows:
+            raise IngestionError(f"Wrote {written} rows but expected {table.num_rows} for {period}")
+        os.replace(tmp, out)
+    finally:
+        tmp.unlink(missing_ok=True)  # never leave temp files behind
     log.info("Saved %s rows x %s columns to %s", f"{table.num_rows:,}", table.num_columns, out)
     return out
 
 
+# ── Manifest: what was loaded, from where ────────────────────────────────────
+
+def manifest_path(raw_dir: Path = RAW_DIR) -> Path:
+    return raw_dir / "flights" / "_manifest.json"
+
+
+def load_manifest(raw_dir: Path = RAW_DIR) -> dict:
+    path = manifest_path(raw_dir)
+    return json.loads(path.read_text()) if path.exists() else {}
+
+
+def save_manifest(manifest: dict, raw_dir: Path = RAW_DIR) -> None:
+    path = manifest_path(raw_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(manifest, indent=2, sort_keys=True))
+    os.replace(tmp, path)  # same atomic swap as the data files
+
+
+def sha256_of(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def already_loaded(sha: str, raw_dir: Path = RAW_DIR) -> list[Path]:
+    """Return this source's output files if it was loaded before and they still exist."""
+    periods = [p for p, entry in load_manifest(raw_dir).items() if entry.get("sha256") == sha]
+    paths = [output_path(*map(int, p.split("-")), raw_dir) for p in sorted(periods)]
+    return paths if paths and all(p.exists() for p in paths) else []
+
+
+def record(manifest: dict, period: str, table: pa.Table, source: str, sha: str) -> None:
+    manifest[period] = {
+        "source": source,
+        "sha256": sha,
+        "rows": table.num_rows,
+        "ingested_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+
+
 # ── Entry points ─────────────────────────────────────────────────────────────
 
-def ingest_file(path: Path, raw_dir: Path = RAW_DIR) -> list[Path]:
-    """Load a local BTS CSV export. Writes one Parquet file per month it contains."""
+def ingest_file(path: Path, raw_dir: Path = RAW_DIR, force: bool = False) -> list[Path]:
+    """Load a local BTS CSV export. Writes one Parquet file per month it contains.
+    Skips files already loaded (same SHA-256) unless force=True."""
     path = Path(path)
+    if not path.is_file():
+        raise IngestionError(f"File not found: {path}")
+    sha = sha256_of(path)
+    if not force and (existing := already_loaded(sha, raw_dir)):
+        log.info("Skipping %s: already loaded (use --force to reload)", path.name)
+        return existing
+
     log.info("Reading %s", path)
-    table = add_metadata(read_bts_csv(path), f"file:{path.name}")
-    return [write_raw(t, period, raw_dir) for period, t in split_by_period(table).items()]
+    source = f"file:{path.name}"
+    table = add_metadata(read_bts_csv(path), source)
+    manifest = load_manifest(raw_dir)
+    outs = []
+    for period, part in split_by_period(table).items():
+        outs.append(write_raw(part, period, raw_dir))
+        record(manifest, period, part, source, sha)
+    save_manifest(manifest, raw_dir)
+    return outs
 
 
 def download(url: str, dest: Path, timeout: int = 300) -> Path:
@@ -157,12 +240,22 @@ def download(url: str, dest: Path, timeout: int = 300) -> Path:
     return dest
 
 
-def ingest_month(year: int, month: int, raw_dir: Path = RAW_DIR) -> Path:
+def ingest_month(year: int, month: int, raw_dir: Path = RAW_DIR, force: bool = False) -> Path:
     """Download one month from BTS and save it. Returns the Parquet path."""
     url = build_url(year, month)
+    period = f"{year}-{month:02d}"
     with tempfile.TemporaryDirectory() as tmp:
-        table = add_metadata(read_bts_zip(download(url, Path(tmp) / "bts.zip")), url)
-    return write_raw(table, f"{year}-{month:02d}", raw_dir)
+        zip_path = download(url, Path(tmp) / "bts.zip")
+        sha = sha256_of(zip_path)
+        if not force and (existing := already_loaded(sha, raw_dir)):
+            log.info("Skipping %s: unchanged since last load", period)
+            return existing[0]
+        table = add_metadata(read_bts_zip(zip_path), url)
+    out = write_raw(table, period, raw_dir)
+    manifest = load_manifest(raw_dir)
+    record(manifest, period, table, url, sha)
+    save_manifest(manifest, raw_dir)
+    return out
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -171,14 +264,15 @@ def main(argv: list[str] | None = None) -> None:
     src.add_argument("--file", type=Path, help="Path to a BTS CSV export")
     src.add_argument("--year", type=int, help="Download this year (use with --month)")
     parser.add_argument("--month", type=int)
+    parser.add_argument("--force", action="store_true", help="Reload even if this source was loaded before")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     if args.file:
-        ingest_file(args.file)
+        ingest_file(args.file, force=args.force)
     else:
         if args.month is None:
             parser.error("--year needs --month")
-        ingest_month(args.year, args.month)
+        ingest_month(args.year, args.month, force=args.force)
 
 
 if __name__ == "__main__":

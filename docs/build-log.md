@@ -114,3 +114,43 @@ One entry per step: what was built, why, and what to be able to explain in an in
 2. Move your CSV into `data/landing/` and name it `flight_delays_2025_11.csv`.
 3. `make ingest-file` (the default `FILE` points at that name).
 4. Run the DuckDB query from Step 2 and compare your carrier counts to the table above.
+
+---
+
+## Step 3 — Idempotent ingestion
+
+**Goal:** running ingestion once, twice or ten times gives the same result. That's what *idempotent* means, and it's what lets a scheduler retry a failed run without a human checking first.
+
+**What I built**
+| Guarantee | How |
+|---|---|
+| No duplicates | One file per month. A re-run replaces that file instead of adding another. |
+| No half-written files | Write to a hidden temp file (`.flights.parquet.<id>.tmp`), check its row count, then rename it over the old file. A rename within one folder is all-or-nothing, so readers see the old month or the new month, never a mix. |
+| No temp debris | `finally:` deletes the temp file whether the write succeeded or crashed. |
+| Skip unchanged sources | `data/raw/flights/_manifest.json` stores a SHA-256 fingerprint of each source file. Same fingerprint and the output still exists means skip. |
+| Corrections still load | If BTS republishes a month, the fingerprint changes, so it reloads and replaces the month. |
+| Manual override | `--force` (or `make ingest-file FORCE=1`) reloads anyway. |
+| Lineage | The manifest records source, fingerprint, row count and load time per month. |
+
+**Real run on November 2025**
+| Run | Result |
+|---|---|
+| First load | 570,550 rows written (~2.5 s) |
+| Re-run | Skipped in 0.3 s |
+| `--force` | Rewritten, still 570,550 rows, one file, no temp files |
+
+**Testing the tests**
+- 8 new tests (23 total). The crash test makes `write_table` write half the data and then raise `disk full`, then checks the old file is byte-for-byte unchanged.
+- To prove that test actually guards something, I temporarily changed the code to write straight to the final file (no temp file). Exactly one test failed: the crash test. This is called *mutation testing*: break the code on purpose and confirm a test notices.
+
+**Interview questions to be ready for**
+- *What does idempotent mean, and why does it matter for pipelines?* Same input, same result, no matter how many times it runs. Schedulers retry failures automatically, so non-idempotent jobs create duplicates or corrupt data on retry.
+- *How do you avoid partial writes?* Write to a temp file, validate, then atomically rename. Same idea as a database transaction commit.
+- *Why hash the file instead of checking its name or date?* Names and timestamps change for reasons unrelated to content (copying, renaming). A content hash changes only if the data changes.
+- *How do you know your tests work?* Break the code deliberately and confirm the right test fails.
+
+**Try it yourself**
+1. `git pull`, then `make test` → expect `23 passed`.
+2. `make ingest-file` twice. The second run should say `Skipping ... already loaded`.
+3. `make ingest-file FORCE=1`, then open `data/raw/flights/_manifest.json` and find the row count and fingerprint.
+4. Optional: repeat the mutation test yourself. In `write_raw`, change `pq.write_table(table, tmp, ...)` to write to `out`, delete the `os.replace` line, run `make test`, see which test fails, then `git checkout src/` to undo.
