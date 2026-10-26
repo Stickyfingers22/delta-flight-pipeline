@@ -35,3 +35,6 @@ tmp*/
 .idea/
 .DS_Store
 .env
+
+# Dagster run history (make dagster)
+.dagster/

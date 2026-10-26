@@ -339,3 +339,52 @@ I broke the project five ways on purpose. Each was caught:
 2. `make test` → expect `31 passed`
 3. `make test-fast` → `24 passed, 7 deselected` (the everyday loop)
 4. Open `tests/fixtures/flights_sample.csv` in Excel or Numbers and find the multi-leg flight (same date, airline and flight number, different origins).
+
+---
+
+## Step 8 — Orchestration with Dagster
+
+**The gap:** the pipeline ran as two separate commands (`make ingest-file`, then `make build`). Nothing ran it on a schedule, noticed a new file, or kept a history of runs.
+
+**Why Dagster (not Airflow):** Dagster is built around **assets**, the tables the pipeline produces, while Airflow is built around tasks. It reads the dbt project directly, so every dbt model becomes an asset and every dbt test becomes a check on it, with no duplicate wiring. It also runs locally with one command and needs no Docker.
+
+**What I built** (`src/delta_pipeline/definitions.py`)
+- **Asset graph:** `landing CSVs → raw/flights → stg_flights → fct_flights + dim_*`. Groups: ingest, staging, marts, reference.
+  - `raw/flights` is a Python asset that calls `ingest.py`. It records metadata on each run: files loaded, files skipped as unchanged, total rows, months.
+  - The dbt assets are loaded from dbt's `manifest.json`. **The wiring:** dagster-dbt names the dbt source `raw.flights` as the asset key `["raw", "flights"]`, and the Python asset uses the same key. That shared name is how Dagster knows dbt has to wait for ingestion.
+  - dbt tests show up as asset checks: 38 of them attach to a single table. Tests that compare two tables still run in `dbt build`.
+- **Job:** `full_pipeline` builds everything.
+- **Schedule:** the 15th of each month at 7am Eastern, since BTS publishes about two months behind. It's **off by default**; you turn it on in the UI.
+- **Sensor:** `new_landing_file` checks `data/landing/` every 60 seconds and starts a run when a CSV appears or changes. A cursor remembers the newest file time it has seen, so each file triggers one run. Also off by default.
+
+**Bug found while building:** the first real run failed with `No files found that match "dbt/seeds/carriers.csv"`.
+- **Cause:** `make build` runs dbt from the repo root, but Dagster runs it from `dbt/`. dbt caches parsed file paths, so the path saved by one run pointed nowhere for the other.
+- **Fix:** Dagster gets its own dbt target folder (`dbt/target/dagster`) and parses with absolute paths.
+- **Verified:** Dagster run, then `make build`, then Dagster again. All three succeed.
+
+**Tests** (`tests/test_orchestration.py`, 5 tests)
+- The definitions load.
+- `stg_flights` depends on `raw/flights` (the wiring above).
+- dbt tests appear as asset checks.
+- The full job runs on the sample and gives 442 rows.
+- The sensor fires once for a new file, then skips.
+
+36 pytest tests pass in total.
+
+**Interview questions to be ready for**
+- *Schedule vs sensor?* A schedule runs at a set time whether or not anything changed. A sensor runs when something happens, like a new file. Here the schedule matches BTS's monthly release, and the sensor handles a file you drop in manually.
+- *Why is re-running safe?* Ingest skips files whose SHA-256 is unchanged, writes Parquet atomically, and dbt rebuilds the tables from scratch. A retry or a double trigger can't duplicate data.
+- *What happens when a dbt test fails in Dagster?* `dbt build` skips the models downstream of the failed test, the run is marked failed, and the UI shows which check failed on which table.
+- *Assets vs tasks?* A task is "run this function". An asset is "this table exists and is up to date". Asset-based tools can show you what's stale and its full lineage, not just whether a job ran.
+- *What would you add for production?* Monthly partitions (one per `period`) so a single month can be backfilled; alerts on failure (Slack or email); a storage database for run history instead of local files; and freshness checks that flag a month that's late.
+
+**Try it yourself** (one line at a time)
+1. `git pull`
+2. `make setup` installs Dagster. Expect a few minutes.
+3. `make test` → expect `36 passed`.
+4. `make dagster`, then open http://localhost:3000.
+   - **Lineage:** Assets → View lineage. Find `raw/flights` feeding `stg_flights`.
+   - **Run it:** Jobs → `full_pipeline` → Launch run. Watch ingest run first (it skips your file as unchanged), then dbt.
+   - **Checks:** click `fct_flights` → Checks. These are your dbt tests.
+   - **Metadata:** click `raw/flights` and look for `total_rows: 570550`.
+   - Stop the server with Ctrl+C.

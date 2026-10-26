@@ -11,3 +11,8 @@ where = ["src"]
 pythonpath = ["src"]
 testpaths = ["tests"]
 markers = ["e2e: runs the full pipeline with dbt (slow, ~30s)"]
+filterwarnings = [
+    "ignore:sqlglotrs is deprecated:DeprecationWarning",  # inside dagster-dbt's dependency, not our code
+    "ignore:Found asset job named:UserWarning",
+    "ignore:AssetExecutionContext.op is deprecated:DeprecationWarning",  # inside dagster-dbt
+]
