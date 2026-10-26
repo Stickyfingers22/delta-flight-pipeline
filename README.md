@@ -2,7 +2,7 @@
 
 A batch data pipeline that ingests U.S. Bureau of Transportation Statistics (BTS) on-time performance data, models it into a star schema, tests it, and serves a delay dashboard, with a focus on Delta Air Lines.
 
-> **Status:** Step 6 of 11 — star schema built and tested with dbt (50 checks) ([`docs/data-model.md`](docs/data-model.md)). First real month loaded: November 2025, 570,550 flights, 14 carriers. See [`docs/build-log.md`](docs/build-log.md) for progress and design decisions.
+> **Status:** Step 7 of 11 — star schema built and tested with dbt (50 checks); end-to-end test runs the whole pipeline on a 442-row sample ([`docs/data-model.md`](docs/data-model.md)). First real month loaded: November 2025, 570,550 flights, 14 carriers. See [`docs/build-log.md`](docs/build-log.md) for progress and design decisions.
 
 ## Architecture (planned)
 
@@ -19,7 +19,7 @@ BTS CSV export / monthly zip ──► Python ingestion ──► raw Parquet �
 | Data model design | star schema | Step 4 ✓ |
 | Modeling | dbt (staging views, mart tables) | Step 5 ✓ |
 | Data tests | dbt unit + data tests | Step 6 ✓ |
-| Pipeline tests | pytest | Step 7 |
+| Pipeline tests | pytest (unit + end-to-end on a real sample) | Step 7 ✓ |
 | Orchestration | Dagster | Step 8 |
 | CI | GitHub Actions | Step 9 |
 | Dashboard | Streamlit | Step 10 |
@@ -28,7 +28,8 @@ BTS CSV export / monthly zip ──► Python ingestion ──► raw Parquet �
 
 ```bash
 make setup     # create .venv and install dependencies
-make test      # run tests
+make test      # run all tests, including the end-to-end pipeline test (~30s)
+make test-fast # skip the end-to-end test
 make ingest-file FILE=data/landing/flight_delays_2025_11.csv   # load a BTS export
 make ingest-file FORCE=1   # reload even if unchanged
 make build        # dbt: seed, build models and run all tests in order

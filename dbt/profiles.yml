@@ -6,5 +6,6 @@ delta_flights:
   outputs:
     dev:
       type: duckdb
-      path: data/warehouse/delta.duckdb   # relative to the repo root, where dbt runs
+      # Relative to the repo root, where dbt runs. DELTA_WAREHOUSE_PATH overrides it (tests, CI).
+      path: "{{ env_var('DELTA_WAREHOUSE_PATH', 'data/warehouse/delta.duckdb') }}"
       threads: 4

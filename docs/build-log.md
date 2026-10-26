@@ -300,3 +300,42 @@ I broke the project five ways on purpose. Each was caught:
 2. `make build` → expect `PASS=49 WARN=1 ERROR=0`.
 3. Read `dbt/tests/assert_cause_minutes_sum_to_arrival_delay.sql` and explain the warning in your own words.
 4. Break something: delete the `YX` line from `dbt/seeds/carriers.csv`, run `make build`, read which test fails, then `git checkout dbt/seeds/carriers.csv`.
+
+---
+
+## Step 7 — Testing the whole pipeline end to end
+
+**The gap:** the pytest tests covered the Python loader, and the dbt tests covered the models, but nothing ran **both together**. Also, every test needed the real 570,550-row file, which isn't in git. GitHub Actions (Step 9) won't have it.
+
+**What I built**
+- **A sample file:** `tests/fixtures/flights_sample.csv`, 442 real rows from November 2025 (88 KB, committed to git).
+  - Made by `scripts/make_fixture.py`. It picks rows in a fixed order (sorted by a hash), so rerunning it gives the same file.
+  - Guaranteed to include: every day of the month, all 14 airlines, cancellations for every reason code, diversions, `"2400"` times, and one flight number with several legs.
+  - Real rows instead of made-up ones, because real rows have the quirks the pipeline has to handle.
+- **Configurable paths:** `DELTA_RAW_DIR` and `DELTA_WAREHOUSE_PATH`. Python and dbt both read them, so a test can run the pipeline in a temporary folder. When they're not set, the defaults are the normal `data/` folders.
+- **`tests/test_pipeline_e2e.py`** runs sample CSV → ingest → Parquet → `dbt build` → star schema, and checks:
+  | Test | Guarantee |
+  |---|---|
+  | `test_build_passes_every_dbt_test` | All 50 dbt checks pass on the sample |
+  | `test_every_input_row_reaches_the_fact_table` | 442 rows in = 442 rows in `fct_flights` |
+  | `test_dimensions_are_populated` | 14 airlines, 100+ airports, 30 days |
+  | `test_all_three_statuses_survive` | completed, cancelled and diverted all present |
+  | `test_rerun_is_idempotent` | Running everything twice changes nothing |
+  | `test_malformed_value_fails_the_build` | A bad time (`"7:05"`) fails with a conversion error, and the fact table is never built |
+  | `test_fixture_is_committed` | `.gitignore` doesn't hide the sample (CI would break) |
+
+**Tested the test:** I changed the dbt macro so it ignored `DELTA_RAW_DIR`. The test failed with `570550 == 442`: dbt had read the real data instead of the sample. Without that check, a test could pass while quietly using your real data.
+
+**Result:** 31 pytest tests pass (24 fast, 7 end-to-end, about 30 seconds). Your real warehouse isn't touched.
+
+**Interview questions to be ready for**
+- *Unit vs end-to-end tests?* Unit tests check one function fast. End-to-end tests check that the pieces work together, for example that the Parquet layout Python writes is what dbt reads. Most bugs between teams show up at those handoffs.
+- *Why a real sample instead of made-up data?* Made-up data only has the cases you thought of. A real sample has `"2400"` times and multi-leg flights whether you remembered them or not.
+- *How do you keep tests from touching production data?* Point all paths at environment variables, run in a temporary folder, and add a test that fails if the isolation breaks (the 570,550 ≠ 442 check).
+- *How do you test that bad data is rejected?* Feed in a bad row and assert the build **fails**, for the right reason, and that nothing bad was written.
+
+**Try it yourself**
+1. `git pull`
+2. `make test` → expect `31 passed`
+3. `make test-fast` → `24 passed, 7 deselected` (the everyday loop)
+4. Open `tests/fixtures/flights_sample.csv` in Excel or Numbers and find the multi-leg flight (same date, airline and flight number, different origins).

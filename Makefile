@@ -1,5 +1,5 @@
 # Short names for commands you'll run often. `make help` lists them.
-.PHONY: help setup test docker-test ingest ingest-file profile transform dbt-test build pipeline clean
+.PHONY: help setup test test-fast fixture docker-test ingest ingest-file profile transform dbt-test build pipeline clean
 
 YEAR ?= 2025
 MONTH ?= 11
@@ -10,7 +10,9 @@ DBT = .venv/bin/dbt
 
 help:
 	@echo "setup        Create .venv and install dependencies"
-	@echo "test         Run tests locally"
+	@echo "test         Run all tests, including the end-to-end pipeline test"
+	@echo "test-fast    Run tests except the slow end-to-end one"
+	@echo "fixture      Rebuild tests/fixtures/flights_sample.csv from FILE"
 	@echo "docker-test  Run tests inside Docker"
 	@echo "ingest-file  Load a BTS CSV export: make ingest-file FILE=data/landing/<file>.csv [FORCE=1]"
 	@echo "ingest       Download one month from BTS: make ingest YEAR=2025 MONTH=11"
@@ -28,6 +30,12 @@ setup:
 
 test:
 	.venv/bin/pytest -q
+
+test-fast:
+	.venv/bin/pytest -q -m "not e2e"
+
+fixture:
+	.venv/bin/python scripts/make_fixture.py $(FILE)
 
 docker-test:
 	docker compose run --rm pipeline
