@@ -73,7 +73,8 @@ dagster:
 	DAGSTER_HOME=$(CURDIR)/.dagster PYTHONPATH=src .venv/bin/dagster dev -m delta_pipeline.definitions
 
 dashboard:
-	PYTHONPATH=src .venv/bin/streamlit run dashboard/app.py --browser.gatherUsageStats false
+	PYTHONPATH=src .venv/bin/streamlit run dashboard/app.py
+	@# settings in .streamlit/config.toml (no email prompt, no telemetry)
 
 clean:
 	find data/raw data/warehouse -type f ! -name .gitkeep -delete

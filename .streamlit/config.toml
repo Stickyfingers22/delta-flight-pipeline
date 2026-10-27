@@ -1,0 +1,6 @@
+# Streamlit settings for `make dashboard` (read from the repo root).
+[server]
+headless = true          # skip the first-run email prompt; open http://localhost:8501 yourself
+
+[browser]
+gatherUsageStats = false # no usage telemetry
