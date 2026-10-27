@@ -15,6 +15,10 @@ COPY dbt/ dbt/
 COPY scripts/ scripts/
 COPY tests/ tests/
 
+# Empty data folders the pipeline writes into. Real data is mounted at run time
+# (docker-compose.yml), never baked into the image.
+RUN mkdir -p data/landing data/raw data/warehouse
+
 ENV PYTHONPATH=/app/src
 
 CMD ["pytest", "-q"]

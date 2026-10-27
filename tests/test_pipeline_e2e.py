@@ -124,7 +124,14 @@ def test_malformed_value_fails_the_build(tmp_path):
     assert fact[0][0] == 0  # the bad data never reached the fact table
 
 
-@pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
+def in_git_repo() -> bool:
+    if shutil.which("git") is None:
+        return False
+    out = subprocess.run(["git", "rev-parse", "--git-dir"], cwd=PROJECT_ROOT, capture_output=True)
+    return out.returncode == 0
+
+
+@pytest.mark.skipif(not in_git_repo(), reason="needs a git checkout (not available inside Docker)")
 def test_fixture_is_committed():
     """CI has no real data, so the fixture must be in git, not ignored."""
     out = subprocess.run(

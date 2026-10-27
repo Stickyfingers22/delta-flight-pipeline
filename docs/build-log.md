@@ -413,6 +413,10 @@ I broke the project five ways on purpose. Each was caught:
 - **Lint findings:**
   - a loop variable used inside a lambda (B023). It was harmless here because the lambda runs right away, but it's a classic Python bug.
   - two old-style `timezone.utc` calls.
+- **The first CI run failed in Docker:** lint passed, and tests passed on 3.11 and 3.12, but 2 tests failed inside the image. A clean-folder copy reproduced both:
+  - `data/` folders missing. `.dockerignore` excludes `data/`, so the image had no `data/landing`, `data/raw` or `data/warehouse`. The Dockerfile now creates them empty; real data is still mounted at run time, never baked in.
+  - The "fixture is committed" test assumed a git checkout. The image has no `.git`, so the test now skips there instead of failing.
+  - This is exactly what the Docker job is for: both problems only exist on a machine that isn't your laptop.
 - **Line endings:** the sample CSV was written with Windows line endings (`\r\n`), so git warned about it. The script now writes `\n`; the content is unchanged.
 
 **Interview questions to be ready for**
