@@ -13,6 +13,7 @@ COPY pyproject.toml .
 COPY src/ src/
 COPY dbt/ dbt/
 COPY scripts/ scripts/
+COPY dashboard/ dashboard/
 COPY tests/ tests/
 
 # Empty data folders the pipeline writes into. Real data is mounted at run time

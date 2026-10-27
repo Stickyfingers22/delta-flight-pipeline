@@ -4,7 +4,7 @@
 
 A batch data pipeline that ingests U.S. Bureau of Transportation Statistics (BTS) on-time performance data, models it into a star schema, tests it, and serves a delay dashboard, with a focus on Delta Air Lines.
 
-> **Status:** Step 9 of 11 — every push runs lint, 36 tests on Python 3.11 and 3.12, the dbt build on a 442-row sample, and the Docker image in GitHub Actions; Dagster orchestrates ingest + dbt ([`docs/data-model.md`](docs/data-model.md)). First real month loaded: November 2025, 570,550 flights, 14 carriers. See [`docs/build-log.md`](docs/build-log.md) for progress and design decisions.
+> **Status:** Step 10 of 11 — Streamlit dashboard on the star schema; Dagster orchestrates ingest + dbt; every push runs lint, 45 tests (Python 3.11 + 3.12), the dbt build on a sample, and the Docker image in CI ([`docs/data-model.md`](docs/data-model.md)). First real month loaded: November 2025, 570,550 flights, 14 carriers. See [`docs/build-log.md`](docs/build-log.md) for progress and design decisions.
 
 ## Architecture (planned)
 
@@ -24,7 +24,7 @@ BTS CSV export / monthly zip ──► Python ingestion ──► raw Parquet �
 | Pipeline tests | pytest (unit + end-to-end on a real sample) | Step 7 ✓ |
 | Orchestration | Dagster (assets, schedule, sensor) | Step 8 ✓ |
 | CI | GitHub Actions (lint, tests on 3.11 + 3.12, dbt build, Docker) | Step 9 ✓ |
-| Dashboard | Streamlit | Step 10 |
+| Dashboard | Streamlit + Altair (metrics in tested SQL) | Step 10 ✓ |
 
 ## Run it
 
@@ -33,6 +33,7 @@ make setup     # create .venv and install dependencies
 make test      # run all tests, including the end-to-end pipeline test (~30s)
 make test-fast # skip the end-to-end test
 make lint      # ruff, same check CI runs
+make dashboard # Streamlit dashboard at http://localhost:8501
 make dagster   # Dagster UI at http://localhost:3000: asset graph, runs, dbt tests as checks
 make ingest-file FILE=data/landing/flight_delays_2025_11.csv   # load a BTS export
 make ingest-file FORCE=1   # reload even if unchanged

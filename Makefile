@@ -1,5 +1,5 @@
 # Short names for commands you'll run often. `make help` lists them.
-.PHONY: help setup test test-fast lint fixture dagster docker-test ingest ingest-file profile transform dbt-test build pipeline clean
+.PHONY: help setup test test-fast lint fixture dagster dashboard docker-test ingest ingest-file profile transform dbt-test build pipeline clean
 
 YEAR ?= 2025
 MONTH ?= 11
@@ -23,6 +23,7 @@ help:
 	@echo "build        dbt seed + run + test in dependency order (stops on failure)"
 	@echo "pipeline     Load the file, then dbt build"
 	@echo "dagster      Start the Dagster UI at http://localhost:3000"
+	@echo "dashboard    Start the Streamlit dashboard at http://localhost:8501"
 	@echo "clean        Delete downloaded data and the local warehouse"
 
 setup:
@@ -37,7 +38,7 @@ test-fast:
 	.venv/bin/pytest -q -m "not e2e"
 
 lint:
-	.venv/bin/ruff check src tests scripts
+	.venv/bin/ruff check src tests scripts dashboard
 
 fixture:
 	.venv/bin/python scripts/make_fixture.py $(FILE)
@@ -70,6 +71,9 @@ pipeline: ingest-file build
 dagster:
 	mkdir -p .dagster
 	DAGSTER_HOME=$(CURDIR)/.dagster PYTHONPATH=src .venv/bin/dagster dev -m delta_pipeline.definitions
+
+dashboard:
+	PYTHONPATH=src .venv/bin/streamlit run dashboard/app.py --browser.gatherUsageStats false
 
 clean:
 	find data/raw data/warehouse -type f ! -name .gitkeep -delete

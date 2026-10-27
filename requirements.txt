@@ -13,3 +13,7 @@ dbt-duckdb==1.11.0    # lets dbt build tables inside DuckDB
 dagster==1.13.26
 dagster-webserver==1.13.26
 dagster-dbt==0.29.26
+
+# Dashboard (step 10)
+streamlit==1.65.0
+altair==6.3.0

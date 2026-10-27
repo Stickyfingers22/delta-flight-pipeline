@@ -10,6 +10,9 @@ test-paths: ["tests"]
 target-path: "target"
 clean-targets: ["target", "dbt_packages", "logs"]
 
+flags:
+  send_anonymous_usage_stats: false   # no telemetry calls to dbt Labs
+
 on-run-start:
   - "{{ create_raw_views() }}"
 

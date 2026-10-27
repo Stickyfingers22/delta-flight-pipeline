@@ -430,3 +430,64 @@ I broke the project five ways on purpose. Each was caught:
 2. `make lint` → `All checks passed!`
 3. On GitHub, open the repo's **Actions** tab and click the latest **CI** run. You'll see the jobs (lint, tests on 3.11 and 3.12, Docker) and their logs.
 4. Break it on purpose: on a new branch, add an unused `import os` to `src/delta_pipeline/profile.py`, push, and watch Lint go red. Then delete the branch.
+
+---
+
+## Step 10 — Dashboard (Streamlit)
+
+**What I built**
+- **`src/delta_pipeline/metrics.py`**: every number on the dashboard as one SQL function over the marts. The definitions live in one place and are tested; the dashboard file only does layout and charts.
+- **`dashboard/app.py`**: filters for month and airline (default Delta), then:
+  - 4 headline numbers vs all other airlines: on time, cancelled, average arrival delay, flights
+  - **How every airline compares:** a dot plot, best to worst
+  - **Delays build through the day:** on-time rate by scheduled departure hour
+  - **What causes the delays:** delay minutes per 100 flights, by BTS cause
+  - **Busiest airports:** a dumbbell chart, Delta vs other airlines at the same airport
+  - **Day by day:** with federal holidays marked
+  - A footer with the result of the last dbt test run
+
+**Metric definitions** (the DOT method, so numbers match official reports)
+- **On time** = arrived less than 15 minutes late. Cancelled and diverted flights count as **not** on time, and all scheduled flights are in the denominator. That's why Delta shows **80.8%** here and **82.4%** in Step 4, which counted completed flights only. Same data, different denominator; always say which you use.
+- **Delta = mainline DL only.** SkyWest (OO) flies for Delta, United, American and Alaska under its own code, so its flights can't be attributed to Delta from this data.
+
+**What the dashboard shows for November 2025**
+- Delta ranks **#1 of 14** on time: 80.8% vs 76.7% for everyone else, with fewer cancellations (1.7% vs 2.6%).
+- **Delta's delays are more often its own fault.** Delta has more airline-caused delay minutes per 100 flights than other airlines (527 vs 429), but fewer late-incoming-aircraft minutes (379 vs 594). Its delays start at the airline (crew, maintenance, boarding) and spread less from flight to flight.
+- **Hub advantage:** at Atlanta, Delta flights left on time 80% of the time vs 72% for other airlines at the same airport. Salt Lake City is the one top-10 airport where others did slightly better.
+- **Delays build through the day** for every airline. Morning departures are ~90% on time, and by 7pm it's ~72%.
+- **The Nov 7–10 crash:** on-time fell to 48% on Nov 9 and cancellations rose from 0.5% to 12.1%. That matches the FAA's order to cut flights at major airports during the government shutdown, which began Nov 7, 2025. The data shows the effect, and the news explains the cause.
+
+**Chart choices** (each one is an interview answer)
+- **Dots instead of bars for on-time rates.** The differences are a few points, so the axis can't start at 0. A bar cut off at 60% visually exaggerates the gap; a dot's position doesn't claim a length.
+- **One color rule:** the selected airline is blue, everyone else is gray, everywhere. No legend lookup for 14 airlines.
+- **Every chart has a table view** (expanders), so the numbers are readable without the chart.
+- **Light and dark mode** get separately chosen color steps.
+- **Gaps in the hour chart are shown as gaps:** hours with under 200 flights are dropped, and the line breaks instead of drawing across hours with no data.
+
+**Engineering details**
+- **DuckDB file locking:** a DuckDB file allows one writer or many readers. A dashboard holding a connection open would block `make build` and Dagster, so each query opens, reads and closes, and results are cached for 10 minutes.
+- **SQL injection guard:** the airline code goes into SQL, so anything that isn't a 2-character code raises an error, and a test checks it.
+- **dbt telemetry off:** `send_anonymous_usage_stats: false`. CI's network blocked dbt's telemetry calls, which surfaced it.
+
+**Tests** (`tests/test_metrics.py`, 9 tests, 45 in total)
+- **Independent check:** the headline numbers are recomputed from the raw sample CSV with pandas (no dbt, no SQL) and must match the dashboard's SQL.
+  - **Mutation test:** I switched the on-time definition to completed-flights-only, and the test failed.
+- Rankings are sorted and cover every airline; rates are between 0 and 1; filters work; bad carrier codes are rejected.
+- **The dashboard itself:** Streamlit's `AppTest` renders the page on the sample, checks there are no errors and 4 headline numbers, then switches the airline to United and checks again.
+
+**Interview questions to be ready for**
+- *Why is Delta's on-time number different in two places?* The denominator: all scheduled flights (DOT) vs completed only. Pick one, name it, and use it consistently.
+- *How do you know the dashboard numbers are right?* They come from one tested module, and the main test recomputes them from raw data by a completely different route.
+- *Why not Tableau or Power BI?* This one is code: version-controlled, reviewed and tested in CI with the pipeline. In a company with Tableau, the marts would feed Tableau the same way.
+- *What was surprising?* Delta's delays are more often caused by the airline itself, but they spread less. And the Nov 9 crash lines up with the FAA shutdown cuts.
+
+**Try it yourself**
+1. `git pull`, then `make setup` (installs Streamlit).
+2. `make test` → expect `45 passed`.
+3. `make dashboard`, then open http://localhost:8501.
+   - Switch the airline to United or Southwest in the sidebar.
+   - Hover the Nov 9 dip in "Day by day".
+   - Open a "Table" expander.
+   - Stop it with Ctrl+C.
+
+Sources: [Florida Phoenix — Air travel snarls as cutbacks due to government shutdown begin](https://floridaphoenix.com/?p=235791); [AltexSoft — Major US airports start 10% flight reductions as shutdown continues](https://www.altexsoft.com/travel-industry-news/us-airports-start-10-flight-cuts-as-shutdown-continues/)

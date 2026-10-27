@@ -30,7 +30,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install ruff==0.14.0
-      - run: ruff check src tests scripts
+      - run: ruff check src tests scripts dashboard
 
   test:
     name: Tests (Python ${{ matrix.python }})
@@ -49,7 +49,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: pytest (ingest, idempotency, end-to-end, Dagster)
+      - name: pytest (ingest, idempotency, end-to-end, Dagster, dashboard)
         run: pytest -q
 
       # Build the star schema from the sample and run all 50 dbt checks, so the dbt
