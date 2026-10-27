@@ -56,7 +56,7 @@ def main(src: Path) -> None:
 
     # Edge cases.
     for code in "ABCD":
-        take(first(rows, lambda r: r["CancellationCode"] == code, 3))
+        take(first(rows, lambda r, code=code: r["CancellationCode"] == code, 3))
     take(first(rows, lambda r: float(r["Diverted"] or 0) == 1, 5))
     take(first(rows, lambda r: r["DepTime"] == "2400", 2))
     take(first(rows, lambda r: r["ArrTime"] == "2400", 2))
@@ -71,7 +71,7 @@ def main(src: Path) -> None:
     out = sorted(picked.values(), key=lambda r: (r["FlightDate"], r["Reporting_Airline"], key(r)))
     OUT.parent.mkdir(parents=True, exist_ok=True)
     with OUT.open("w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=header, quoting=csv.QUOTE_MINIMAL)
+        w = csv.DictWriter(f, fieldnames=header, quoting=csv.QUOTE_MINIMAL, lineterminator="\n")
         w.writeheader()
         w.writerows(out)
     print(f"wrote {len(out)} rows to {OUT}")

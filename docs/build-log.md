@@ -388,3 +388,41 @@ I broke the project five ways on purpose. Each was caught:
    - **Checks:** click `fct_flights` → Checks. These are your dbt tests.
    - **Metadata:** click `raw/flights` and look for `total_rows: 570550`.
    - Stop the server with Ctrl+C.
+
+---
+
+## Step 9 — Continuous integration with GitHub Actions
+
+**The gap:** tests only ran when someone remembered to run `make test` on their own laptop. A broken change could be pushed and nobody would know until the next run.
+
+**What I built** (`.github/workflows/ci.yml`): every push to `main` and every pull request runs three jobs on GitHub's machines, in parallel:
+| Job | What it checks |
+|---|---|
+| **Lint** | `ruff`: unused imports, common bugs, import order, old syntax |
+| **Tests** (Python 3.11 and 3.12) | All 36 pytest tests, then `dbt build` on the sample with all 50 dbt checks |
+| **Docker** | The image builds from scratch, and the full test suite passes inside it |
+
+- **No real data needed:** the end-to-end tests use the committed 442-row sample (Step 7). That's why Step 7 came first.
+- **Two Python versions:** 3.11 is what your Mac runs, and 3.12 is what the Docker image runs. A matrix tests both at once.
+- **Speed:** the pip cache reuses downloaded packages between runs. A newer push cancels an older run that's still going on the same branch.
+- **Least privilege:** `permissions: contents: read`, so the workflow can read the code but can't change the repo.
+- **Badge:** the README shows green or red for the latest run on `main`.
+
+**Fixes this step forced**
+- **Docker image was incomplete:** it never copied `dbt/` or `scripts/`, so the end-to-end tests would have failed inside it. Fixed, and `.dockerignore` keeps `.venv`, `data/` and run history out of the image. The image had never been tested before; CI now builds and tests it on every push.
+- **Lint findings:**
+  - a loop variable used inside a lambda (B023). It was harmless here because the lambda runs right away, but it's a classic Python bug.
+  - two old-style `timezone.utc` calls.
+- **Line endings:** the sample CSV was written with Windows line endings (`\r\n`), so git warned about it. The script now writes `\n`; the content is unchanged.
+
+**Interview questions to be ready for**
+- *What does your CI do?* Lint, unit and end-to-end tests on two Python versions, the full dbt build with 50 data checks on a real sample, and a Docker build. A change that breaks the pipeline can't merge quietly.
+- *How do you test a data pipeline in CI without production data?* A small, committed sample of real rows that covers the edge cases, plus environment variables so everything runs in a temp folder.
+- *Why test in Docker too?* It proves the pipeline runs on a clean machine with only what's in the repo, so it doesn't depend on something left over on your laptop. This caught the missing `dbt/` folder.
+- *What would you add next?* Branch protection (no merging to `main` unless CI is green), and running only the dbt models changed in a pull request (`state:modified+`) once the project is bigger.
+
+**Try it yourself**
+1. `git pull`, then `make setup` (adds ruff).
+2. `make lint` → `All checks passed!`
+3. On GitHub, open the repo's **Actions** tab and click the latest **CI** run. You'll see the jobs (lint, tests on 3.11 and 3.12, Docker) and their logs.
+4. Break it on purpose: on a new branch, add an unused `import os` to `src/delta_pipeline/profile.py`, push, and watch Lint go red. Then delete the branch.

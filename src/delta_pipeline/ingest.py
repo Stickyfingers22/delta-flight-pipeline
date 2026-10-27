@@ -36,7 +36,7 @@ import re
 import tempfile
 import uuid
 import zipfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pyarrow as pa
@@ -122,7 +122,7 @@ def read_bts_zip(zip_path: Path) -> pa.Table:
 
 def add_metadata(table: pa.Table, source: str) -> pa.Table:
     n = table.num_rows
-    ingested_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    ingested_at = datetime.now(UTC).isoformat(timespec="seconds")
     table = table.append_column("_source", pa.array([source] * n, pa.string()))
     return table.append_column("_ingested_at", pa.array([ingested_at] * n, pa.string()))
 
@@ -199,7 +199,7 @@ def record(manifest: dict, period: str, table: pa.Table, source: str, sha: str) 
         "source": source,
         "sha256": sha,
         "rows": table.num_rows,
-        "ingested_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "ingested_at": datetime.now(UTC).isoformat(timespec="seconds"),
     }
 
 

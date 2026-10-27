@@ -16,3 +16,11 @@ filterwarnings = [
     "ignore:Found asset job named:UserWarning",
     "ignore:AssetExecutionContext.op is deprecated:DeprecationWarning",  # inside dagster-dbt
 ]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+# E/F: errors and unused code, I: import order, B: common bugs, UP: modern syntax
+select = ["E", "F", "I", "B", "UP"]

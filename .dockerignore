@@ -1,0 +1,9 @@
+# Keep the image small and free of local state: the build only needs code.
+.git
+.venv
+.dagster
+.pytest_cache
+**/__pycache__
+data/
+dbt/target/
+dbt/logs/

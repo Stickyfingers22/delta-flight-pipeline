@@ -1,0 +1,71 @@
+# Continuous integration: every push and pull request is checked automatically.
+# A red X on GitHub means something below failed; click it to see which step and why.
+#
+# No real data is needed: the end-to-end tests run on the committed sample
+# (tests/fixtures/flights_sample.csv, 442 real rows).
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:        # adds a "Run workflow" button on the Actions tab
+
+# A newer push to the same branch cancels the older, still-running check.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install ruff==0.14.0
+      - run: ruff check src tests scripts
+
+  test:
+    name: Tests (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12"]     # 3.11 = your Mac, 3.12 = the Docker image
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip                 # reuse downloaded packages between runs
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: pytest (ingest, idempotency, end-to-end, Dagster)
+        run: pytest -q
+
+      # Build the star schema from the sample and run all 50 dbt checks, so the dbt
+      # output is visible in the log even though the pytest tests already cover it.
+      - name: dbt build on the sample
+        env:
+          DELTA_RAW_DIR: ${{ runner.temp }}/raw
+          DELTA_WAREHOUSE_PATH: ${{ runner.temp }}/ci.duckdb
+        run: |
+          PYTHONPATH=src python -m delta_pipeline.ingest --file tests/fixtures/flights_sample.csv
+          dbt build --project-dir dbt --profiles-dir dbt
+
+  docker:
+    name: Docker image builds and passes tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: docker build -t delta-pipeline .
+      - run: docker run --rm delta-pipeline

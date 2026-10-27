@@ -8,3 +8,4 @@ services:
       - ./data:/app/data
       - ./src:/app/src
       - ./tests:/app/tests
+      - ./dbt:/app/dbt
