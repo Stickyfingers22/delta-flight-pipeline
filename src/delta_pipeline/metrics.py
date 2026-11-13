@@ -78,6 +78,7 @@ def headline(con, focus: str = FOCUS_DEFAULT, periods: list[str] | None = None) 
         from marts.fct_flights f
         where {_where(periods)}
         group by 1
+        order by grp  -- stable row order; group by alone has none
     """).df().set_index("grp")
 
 
@@ -129,6 +130,7 @@ def cause_minutes(con, focus: str = FOCUS_DEFAULT, periods: list[str] | None = N
         from marts.fct_flights f
         where {_where(periods)}
         group by 1
+        order by grp
     """).df()
     long = wide.melt(id_vars="grp", var_name="cause_col", value_name="minutes_per_100")
     long["cause"] = long["cause_col"].map(CAUSES)
