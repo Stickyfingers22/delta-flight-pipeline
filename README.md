@@ -1,10 +1,10 @@
-# Delta Flight Delay Pipeline
+# Delta Data Pipeline
 
 [![CI](https://github.com/Stickyfingers22/delta-flight-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/Stickyfingers22/delta-flight-pipeline/actions/workflows/ci.yml)
 
 An end-to-end batch data pipeline on U.S. Bureau of Transportation Statistics (BTS) flight data. It covers ingestion to Parquet, a dbt star schema in DuckDB, Dagster orchestration, CI on every push, and a Streamlit dashboard comparing Delta's on-time performance with every other U.S. airline.
 
-**[Live dashboard](https://delta-flight-pipeline.streamlit.app)** · [Build log](docs/build-log.md): every step, decision and interview question · [Data model](docs/data-model.md)
+**[Live dashboard](https://delta-flight-pipeline.streamlit.app)** · [Build log](docs/build-log.md): every step and the decisions behind it · [Data model](docs/data-model.md)
 
 [![Dashboard: Delta Air Lines on-time performance, ranked against 14 U.S. airlines](docs/images/dashboard.png)](https://delta-flight-pipeline.streamlit.app)
 

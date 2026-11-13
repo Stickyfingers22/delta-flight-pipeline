@@ -132,7 +132,7 @@ The union of every origin and destination: 340 airports. Destinations are includ
 
 | Decision | Alternative | Why this one |
 |---|---|---|
-| Star schema | One wide flat table | Dimensions are reused (airport twice), changes happen in one place, and it's what BI tools and interviewers expect |
+| Star schema | One wide flat table | Dimensions are reused (airport twice), changes happen in one place, and it's what BI tools expect |
 | Natural codes (`DL`, `ATL`) as dimension keys | Integer surrogate keys | IATA codes are stable, readable and already unique. Surrogates add a lookup with little benefit at this scale |
 | Hashed `flight_id` for the fact | Composite 4-column key | One column is simpler to join, test and reference from the ML project |
 | Keep cancelled and diverted flights | Completed flights only | Cancellation rate is a KPI; dropping them biases every average |

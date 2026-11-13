@@ -1,6 +1,6 @@
 # Build Log
 
-One entry per step: what was built, why, and what to be able to explain in an interview.
+One entry per step: what was built, and why.
 
 ---
 
@@ -24,7 +24,7 @@ One entry per step: what was built, why, and what to be able to explain in an in
 | DuckDB | An analytical database that runs inside Python with no server. Reads Parquet directly. Free, fast, and swappable for Snowflake/Databricks later. |
 | Smoke tests | Fail fast: if the environment is broken, find out before debugging real logic. |
 
-**Interview questions to be ready for**
+**Why it's built this way**
 - *Why DuckDB instead of Postgres?* Postgres is built for many small transactions (row storage). This workload is large scans and aggregations, which columnar engines like DuckDB do much faster, and DuckDB needs no server.
 - *Why copy `requirements.txt` before the code in the Dockerfile?* Docker caches each layer. Dependencies change rarely, code changes often, so this order avoids reinstalling everything on every code change.
 - *What's a volume?* A folder shared between the host and the container, so data outlives the container.
@@ -56,7 +56,7 @@ One entry per step: what was built, why, and what to be able to explain in an in
 | Parquet with zstd compression | Columnar storage, far smaller and faster to query than CSV. |
 | Tests replace `download` (monkeypatch) | Tests shouldn't depend on a government website being up. They test *our* logic. |
 
-**Interview questions to be ready for**
+**Why it's built this way**
 - *Why not filter to Delta during ingestion?* Raw data should be a faithful copy of the source. Filtering early is irreversible, and it would block comparisons with other carriers.
 - *Why store numbers as strings?* Schema-on-read: ingestion's job is to land the data reliably. Typing and cleaning happen in a tested transformation layer.
 - *How do you test code that downloads files?* Swap the network call for a fake that writes a known file (dependency injection via monkeypatch), then assert on the output.
@@ -105,7 +105,7 @@ One entry per step: what was built, why, and what to be able to explain in an in
 | Read the header with `utf-8-sig` | Excel-saved CSVs often start with an invisible byte-order mark that would corrupt the first column name. |
 | Data stays out of git | GitHub rejects files over 100 MB, and data belongs in storage, not version control. The README explains how to reproduce it. |
 
-**Interview questions to be ready for**
+**Why it's built this way**
 - *How does your pipeline handle different source formats?* Separate readers for each format, all producing the same Arrow table, then one shared writer. Adding a source means writing a reader, not touching the rest.
 - *What if a file has more than one month?* It's split by the date in each row, and each month lands in its own partition.
 
@@ -143,7 +143,7 @@ One entry per step: what was built, why, and what to be able to explain in an in
 - 8 new tests (23 total). The crash test makes `write_table` write half the data and then raise `disk full`, then checks the old file is byte-for-byte unchanged.
 - To prove that test actually guards something, I temporarily changed the code to write straight to the final file (no temp file). Exactly one test failed: the crash test. This is called *mutation testing*: break the code on purpose and confirm a test notices.
 
-**Interview questions to be ready for**
+**Why it's built this way**
 - *What does idempotent mean, and why does it matter for pipelines?* Same input, same result, no matter how many times it runs. Schedulers retry failures automatically, so non-idempotent jobs create duplicates or corrupt data on retry.
 - *How do you avoid partial writes?* Write to a temp file, validate, then atomically rename. Same idea as a database transaction commit.
 - *Why hash the file instead of checking its name or date?* Names and timestamps change for reasons unrelated to content (copying, renaming). A content hash changes only if the data changes.
@@ -179,7 +179,7 @@ One entry per step: what was built, why, and what to be able to explain in an in
 | …departure delays? | 258 do | They left the gate first. Not an error, so no test against it |
 | Do cause minutes add up to the arrival delay? | All but 11 of 114,170 | *Corrected in step 6:* not rounding. All 11 are Southwest flights that reported 0 for every cause. The test warns instead of failing |
 
-**Interview questions to be ready for**
+**Why it's built this way**
 - *What's the grain of your fact table?* One row per scheduled flight leg, including cancellations and diversions. I chose it after finding that flight numbers repeat across legs on the same day.
 - *Fact vs dimension?* Facts are events with measurements (a flight and its delay minutes). Dimensions describe the context you filter and group by (which airline, which airport, which day).
 - *What's a role-playing dimension?* One dimension used in several roles. `dim_airport` serves as both origin and destination.
@@ -190,7 +190,7 @@ One entry per step: what was built, why, and what to be able to explain in an in
 1. `git pull`, then `make test` → expect `24 passed`.
 2. `make profile` and compare the output to the "What the data proved" table.
 3. Open `docs/data-model.md` on GitHub to see the diagram render.
-4. Explain the grain out loud in one sentence, including *why* `Origin` is in the key. That sentence is a likely interview question.
+4. Explain the grain out loud in one sentence, including *why* `Origin` is in the key.
 
 ---
 
@@ -242,7 +242,7 @@ Run it with `make transform` (or `make pipeline` to load the file first).
 | No dbt packages (e.g. dbt_utils) | One fewer download that can fail. The surrogate key is just `md5(concat_ws('|', ...))`. |
 | `profiles.yml` in the repo | Safe here: DuckDB is a local file with no password. With Snowflake or Databricks it would live outside the repo and read secrets from environment variables. |
 
-**Interview questions to be ready for**
+**Why it's built this way**
 - *What's dbt?* A tool that turns `SELECT` statements into tables and views, in the right order, using `ref()` to build a dependency graph. It brings software practices to SQL: version control, tests, documentation.
 - *What's the difference between `ref()` and `source()`?* `source()` points at data dbt didn't build (our raw Parquet). `ref()` points at another dbt model, which is how dbt knows build order.
 - *Why separate staging from marts?* Staging fixes types and names once, in one place. Every mart builds on clean columns, so cleaning logic is never duplicated.
@@ -291,7 +291,7 @@ I broke the project five ways on purpose. Each was caught:
 | Drop cancelled flights from the fact | `assert_fact_row_count_matches_raw` |
 | Change the delay flag to 30 minutes | `assert_delay_flags_match_minutes` |
 
-**Interview questions to be ready for**
+**Why it's built this way**
 - *Unit tests vs data tests?* Unit tests check **logic** on tiny hand-made inputs before the model builds ("does `2400` become midnight?"). Data tests check the **real data** after the build ("are all 570,550 ids unique?"). One catches code bugs, the other catches data problems.
 - *What's a relationships test?* It checks every foreign key in the fact table exists in the dimension: no flight points to an airport that isn't in `dim_airport`.
 - *What do you do with a test that fails on real but legitimate data?* Investigate first (here: Southwest's zero causes), document it, and set a threshold: warn on known cases, fail if it grows. Don't delete the test.
@@ -330,7 +330,7 @@ I broke the project five ways on purpose. Each was caught:
 
 **Result:** 31 pytest tests pass (24 fast, 7 end-to-end, about 30 seconds). Your real warehouse isn't touched.
 
-**Interview questions to be ready for**
+**Why it's built this way**
 - *Unit vs end-to-end tests?* Unit tests check one function fast. End-to-end tests check that the pieces work together, for example that the Parquet layout Python writes is what dbt reads. Most bugs between teams show up at those handoffs.
 - *Why a real sample instead of made-up data?* Made-up data only has the cases you thought of. A real sample has `"2400"` times and multi-leg flights whether you remembered them or not.
 - *How do you keep tests from touching production data?* Point all paths at environment variables, run in a temporary folder, and add a test that fails if the isolation breaks (the 570,550 ≠ 442 check).
@@ -373,7 +373,7 @@ I broke the project five ways on purpose. Each was caught:
 
 36 pytest tests pass in total.
 
-**Interview questions to be ready for**
+**Why it's built this way**
 - *Schedule vs sensor?* A schedule runs at a set time whether or not anything changed. A sensor runs when something happens, like a new file. Here the schedule matches BTS's monthly release, and the sensor handles a file you drop in manually.
 - *Why is re-running safe?* Ingest skips files whose SHA-256 is unchanged, writes Parquet atomically, and dbt rebuilds the tables from scratch. A retry or a double trigger can't duplicate data.
 - *What happens when a dbt test fails in Dagster?* `dbt build` skips the models downstream of the failed test, the run is marked failed, and the UI shows which check failed on which table.
@@ -421,7 +421,7 @@ I broke the project five ways on purpose. Each was caught:
   - This is exactly what the Docker job is for: both problems only exist on a machine that isn't your laptop.
 - **Line endings:** the sample CSV was written with Windows line endings (`\r\n`), so git warned about it. The script now writes `\n`; the content is unchanged.
 
-**Interview questions to be ready for**
+**Why it's built this way**
 - *What does your CI do?* Lint, unit and end-to-end tests on two Python versions, the full dbt build with 42 dbt tests on a real sample, and a Docker build. A change that breaks the pipeline can't merge quietly.
 - *How do you test a data pipeline in CI without production data?* A small, committed sample of real rows that covers the edge cases, plus environment variables so everything runs in a temp folder.
 - *Why test in Docker too?* It proves the pipeline runs on a clean machine with only what's in the repo, so it doesn't depend on something left over on your laptop. This caught the missing `dbt/` folder.
@@ -459,7 +459,7 @@ I broke the project five ways on purpose. Each was caught:
 - **Delays build through the day** for every airline. Morning departures are ~90% on time, and by 7pm it's ~72%.
 - **The Nov 7–10 crash:** on-time fell to 48% on Nov 9 and cancellations rose from 0.5% to 12.1%. That matches the FAA's order to cut flights at major airports during the government shutdown, which began Nov 7, 2025. The data shows the effect, and the news explains the cause.
 
-**Chart choices** (each one is an interview answer)
+**Chart choices**
 - **Dots instead of bars for on-time rates.** The differences are a few points, so the axis can't start at 0. A bar cut off at 60% visually exaggerates the gap; a dot's position doesn't claim a length.
 - **One color rule:** the selected airline is blue, everyone else is gray, everywhere. No legend lookup for 14 airlines.
 - **Every chart has a table view** (expanders), so the numbers are readable without the chart.
@@ -477,7 +477,7 @@ I broke the project five ways on purpose. Each was caught:
 - Rankings are sorted and cover every airline; rates are between 0 and 1; filters work; bad carrier codes are rejected.
 - **The dashboard itself:** Streamlit's `AppTest` renders the page on the sample, checks there are no errors and 4 headline numbers, then switches the airline to United and checks again.
 
-**Interview questions to be ready for**
+**Why it's built this way**
 - *Why is Delta's on-time number different in two places?* The denominator: all scheduled flights (DOT) vs completed only. Pick one, name it, and use it consistently.
 - *How do you know the dashboard numbers are right?* They come from one tested module, and the main test recomputes them from raw data by a completely different route.
 - *Why not Tableau or Power BI?* This one is code: version-controlled, reviewed and tested in CI with the pipeline. In a company with Tableau, the marts would feed Tableau the same way.
@@ -528,7 +528,7 @@ Sources: [Florida Phoenix — Air travel snarls as cutbacks due to government sh
 - the dashboard renders from the snapshot alone
 - the committed snapshot exists, matches its metadata and is under 20 MB
 
-**Interview questions to be ready for**
+**Why it's built this way**
 - *How is the dashboard hosted if the warehouse isn't in git?* A small Parquet export of just what the dashboard reads, refreshed with `make snapshot` and checked against the warehouse by a test.
 - *How did ties break your test?* SQL doesn't guarantee row order without a full `ORDER BY`. With ties, two correct runs can differ, and `LIMIT` can pick different rows. Always add a tie-breaker when order matters.
 - *What would you change for production?* Write the marts to cloud storage (S3/GCS) on each pipeline run and have the dashboard read from there, instead of committing a snapshot.
