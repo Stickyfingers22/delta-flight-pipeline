@@ -1,21 +1,30 @@
-"""Step 10: Delta on-time performance dashboard (Streamlit).
+"""Delta on-time performance dashboard (Streamlit).
 
-Run:  make dashboard   then open http://localhost:8501
+Run locally:  make dashboard   then open http://localhost:8501
+Hosted:       Streamlit Community Cloud, entry point dashboard/app.py
 
 Reads only the marts (the star schema built by dbt). Every number comes from
 src/delta_pipeline/metrics.py, where the definitions live and are tested.
+
+Data source, in order:
+  1. the local warehouse (data/warehouse/delta.duckdb) if it exists: your machine
+  2. the committed snapshot (dashboard/snapshot/, Parquet): the hosted app
 """
 
 import json
 import os
+import sys
 from pathlib import Path
 
+# The hosted app runs `streamlit run dashboard/app.py` without `make`, so PYTHONPATH=src
+# isn't set. Put src/ on the path so `import delta_pipeline` works either way.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
 import altair as alt
-import duckdb
 import pandas as pd
 import streamlit as st
 
-from delta_pipeline import PROJECT_ROOT, WAREHOUSE_PATH
+from delta_pipeline import PROJECT_ROOT, WAREHOUSE_PATH, snapshot
 from delta_pipeline import metrics as m
 
 st.set_page_config(page_title="Delta On-Time Performance", page_icon="✈️", layout="wide")
@@ -33,22 +42,25 @@ HOLIDAY_COLOR = "#c3c2b7" if DARK else "#52514e"
 # DuckDB allows one writer OR many readers per file. A connection held open by the
 # dashboard would block `make build` and Dagster, so each query opens, reads and closes.
 # Results are cached for 10 minutes so the page stays fast.
-# DELTA_WAREHOUSE_PATH is read here (not only at import) so tests can point at a sample.
-WAREHOUSE = Path(os.environ.get("DELTA_WAREHOUSE_PATH", WAREHOUSE_PATH))
+# The env vars are read here (not only at import) so tests can point at a sample.
+warehouse = Path(os.environ.get("DELTA_WAREHOUSE_PATH", WAREHOUSE_PATH))
+snapshot_dir = Path(os.environ.get("DELTA_SNAPSHOT_DIR", snapshot.SNAPSHOT_DIR))
+if warehouse.exists():
+    SOURCE = warehouse
+elif (snapshot_dir / "fct_flights.parquet").exists():
+    SOURCE = snapshot_dir
+else:
+    st.error("No data found. Run `make pipeline` (or the Dagster job), or `make snapshot`.")
+    st.stop()
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def run(warehouse: str, fn_name: str, *args, **kwargs) -> pd.DataFrame | list:
-    with duckdb.connect(warehouse, read_only=True) as con:
+def run(source: str, fn_name: str, *args, **kwargs) -> pd.DataFrame | list:
+    with snapshot.open_marts(Path(source)) as con:
         return getattr(m, fn_name)(con, *args, **kwargs)
 
-
-if not WAREHOUSE.exists():
-    st.error(f"No warehouse at `{WAREHOUSE}`. Run `make pipeline` (or the Dagster job) first.")
-    st.stop()
-
-all_periods = run(str(WAREHOUSE), "periods")
-carrier_df = run(str(WAREHOUSE), "carriers")
+all_periods = run(str(SOURCE), "periods")
+carrier_df = run(str(SOURCE), "carriers")
 names = dict(zip(carrier_df.carrier_code, carrier_df.carrier_name, strict=True))
 
 # ---------------------------------------------------------------- filters
@@ -103,7 +115,7 @@ st.caption(
     "on-time performance data, modelled with dbt"
 )
 
-head = run(str(WAREHOUSE), "headline", focus, periods)
+head = run(str(SOURCE), "headline", focus, periods)
 f, o = head.loc["focus"], head.loc["others"]
 k1, k2, k3, k4 = st.columns(4)
 k1.metric(
@@ -123,7 +135,7 @@ k4.metric("Scheduled flights", f"{int(f.flights):,}", delta=f"{f.flights / (f.fl
 
 # ---------------------------------------------------------------- airline ranking
 st.subheader("How every airline compares")
-rank = run(str(WAREHOUSE), "carrier_ranking", periods).assign(
+rank = run(str(SOURCE), "carrier_ranking", periods).assign(
     highlight=lambda d: d.carrier_code.eq(focus).map({True: focus_name, False: "All other airlines"})
 )
 # Dots, not bars: the gaps are a few points, so the axis can't start at zero, and a
@@ -156,7 +168,7 @@ left, right = st.columns(2)
 # ---------------------------------------------------------------- by departure hour
 with left:
     st.subheader("Delays build through the day")
-    hours = labelled(run(str(WAREHOUSE), "by_departure_hour", focus, periods))
+    hours = labelled(run(str(SOURCE), "by_departure_hour", focus, periods))
     # Put empty rows in for dropped hours so the line breaks there instead of
     # drawing straight across hours that have no data.
     grid = pd.MultiIndex.from_product([range(24), list(LABELS.values())], names=["hour", "label"])
@@ -190,7 +202,7 @@ with left:
 # ---------------------------------------------------------------- causes
 with right:
     st.subheader("What causes the delays")
-    causes = labelled(run(str(WAREHOUSE), "cause_minutes", focus, periods))
+    causes = labelled(run(str(SOURCE), "cause_minutes", focus, periods))
     cause_order = list(m.CAUSES.values())
     cause_chart = (
         alt.Chart(causes)
@@ -217,7 +229,7 @@ with right:
 
 # ---------------------------------------------------------------- airports
 st.subheader(f"{focus_possessive} busiest airports")
-ap = labelled(run(str(WAREHOUSE), "airports", focus, periods))
+ap = labelled(run(str(SOURCE), "airports", focus, periods))
 ap["airport"] = ap.airport_code + " · " + ap.city_name
 ap_order = (
     ap[ap.grp == "focus"].sort_values("flights", ascending=False).airport.tolist()
@@ -250,7 +262,7 @@ table_view(ap.drop(columns=["grp", "airport"]), "airports")
 
 # ---------------------------------------------------------------- daily
 st.subheader("Day by day")
-days = labelled(run(str(WAREHOUSE), "daily", focus, periods))
+days = labelled(run(str(SOURCE), "daily", focus, periods))
 base = alt.Chart(days).encode(
     x=alt.X("date:T", title=None),
     y=alt.Y("on_time_rate:Q", title="On-time arrivals", axis=pct, scale=alt.Scale(zero=False)),
@@ -280,16 +292,32 @@ table_view(days.drop(columns="grp"), "daily")
 
 # ---------------------------------------------------------------- data checks
 st.divider()
-results_file = PROJECT_ROOT / "dbt" / "target" / "run_results.json"
-if results_file.exists():
-    results = json.loads(results_file.read_text())
-    tests = [r for r in results["results"] if r["unique_id"].startswith(("test.", "unit_test."))]
-    counts = pd.Series([r["status"] for r in tests]).value_counts().to_dict()
-    when = results["metadata"]["generated_at"][:16].replace("T", " ")
+meta = snapshot.read_meta(SOURCE)
+if meta:  # hosted app: the dbt results were saved with the snapshot
+    tests = meta.get("dbt_tests")
+    counts, when = (tests["counts"], tests["run_at"]) if tests else ({}, None)
+    source_note = f"Snapshot of {meta['flights']:,} flights exported {meta['exported_at'][:10]}. "
+else:  # local: read dbt's own results file
+    results_file = PROJECT_ROOT / "dbt" / "target" / "run_results.json"
+    counts, when = {}, None
+    if results_file.exists():
+        results = json.loads(results_file.read_text())
+        tests = [r for r in results["results"] if r["unique_id"].startswith(("test.", "unit_test."))]
+        counts = pd.Series([r["status"] for r in tests]).value_counts().to_dict()
+        when = results["metadata"]["generated_at"]
+    source_note = ""
+
+if counts:
     st.caption(
-        f"Data checks from the last dbt run ({when} UTC): "
+        source_note
+        + f"Data checks from the last dbt run ({when[:16].replace('T', ' ')} UTC): "
         + ", ".join(f"{n} {s}" for s, n in sorted(counts.items()))
-        + ". Warnings are known gaps in the source data, documented in docs/build-log.md."
+        + ". Warnings are known gaps in the source data, documented in "
+        "[the build log](https://github.com/Stickyfingers22/delta-flight-pipeline/blob/main/docs/build-log.md)."
     )
 else:
-    st.caption("No dbt test results found. Run `make build` to check the data.")
+    st.caption(source_note + "No dbt test results found. Run `make build` to check the data.")
+st.caption(
+    "Code, tests and pipeline: "
+    "[github.com/Stickyfingers22/delta-flight-pipeline](https://github.com/Stickyfingers22/delta-flight-pipeline)"
+)

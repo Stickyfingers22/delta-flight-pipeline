@@ -1,0 +1,7 @@
+# Only what the hosted dashboard needs (Streamlit Community Cloud reads this file
+# because it sits next to app.py). The full pipeline's dependencies are in ../requirements.txt.
+streamlit==1.65.0
+altair==6.3.0
+duckdb==1.5.6
+pandas==2.2.3
+pyarrow==18.1.0

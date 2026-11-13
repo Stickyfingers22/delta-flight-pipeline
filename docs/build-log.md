@@ -266,7 +266,9 @@ Run it with `make transform` (or `make pipeline` to load the file first).
 - **Proof the upgrade changed nothing:** I rebuilt the warehouse with the old versions and compared row by row (`EXCEPT ALL` both ways). 0 rows differ in any of the four marts, and column names and types match. (A first attempt hashed whole rows; the hashes differed only because DuckDB 1.5 prints text differently, which is why I switched to a row comparison.)
 - **Bug fixed:** the staging view found the data with a path relative to `dbt/`, so it broke when queried from the repo root. dbt now runs from the root (`--project-dir dbt`), and a macro creates a `raw.flights` view over the Parquet files at the start of every run.
 
-**What I built: 50 checks, run by `make build`**
+**What I built: 42 dbt tests (39 data + 3 unit), run by `make build`**
+
+*Counting note (corrected in step 11): `make build` reports `TOTAL=50` because it also counts the 2 seeds and 5 models it builds. The tests are 42 of those 50.*
 | Kind | Count | Examples |
 |---|---|---|
 | Unit tests (fake input rows, check the logic) | 3 | `"2400"` → 00:00 · cancelled beats diverted · multi-leg flights get different ids |
@@ -316,7 +318,7 @@ I broke the project five ways on purpose. Each was caught:
 - **`tests/test_pipeline_e2e.py`** runs sample CSV → ingest → Parquet → `dbt build` → star schema, and checks:
   | Test | Guarantee |
   |---|---|
-  | `test_build_passes_every_dbt_test` | All 50 dbt checks pass on the sample |
+  | `test_build_passes_every_dbt_test` | All 42 dbt tests pass on the sample |
   | `test_every_input_row_reaches_the_fact_table` | 442 rows in = 442 rows in `fct_flights` |
   | `test_dimensions_are_populated` | 14 airlines, 100+ airports, 30 days |
   | `test_all_three_statuses_survive` | completed, cancelled and diverted all present |
@@ -399,7 +401,7 @@ I broke the project five ways on purpose. Each was caught:
 | Job | What it checks |
 |---|---|
 | **Lint** | `ruff`: unused imports, common bugs, import order, old syntax |
-| **Tests** (Python 3.11 and 3.12) | All 36 pytest tests, then `dbt build` on the sample with all 50 dbt checks |
+| **Tests** (Python 3.11 and 3.12) | All 36 pytest tests, then `dbt build` on the sample with all 42 dbt tests |
 | **Docker** | The image builds from scratch, and the full test suite passes inside it |
 
 - **No real data needed:** the end-to-end tests use the committed 442-row sample (Step 7). That's why Step 7 came first.
@@ -420,7 +422,7 @@ I broke the project five ways on purpose. Each was caught:
 - **Line endings:** the sample CSV was written with Windows line endings (`\r\n`), so git warned about it. The script now writes `\n`; the content is unchanged.
 
 **Interview questions to be ready for**
-- *What does your CI do?* Lint, unit and end-to-end tests on two Python versions, the full dbt build with 50 data checks on a real sample, and a Docker build. A change that breaks the pipeline can't merge quietly.
+- *What does your CI do?* Lint, unit and end-to-end tests on two Python versions, the full dbt build with 42 dbt tests on a real sample, and a Docker build. A change that breaks the pipeline can't merge quietly.
 - *How do you test a data pipeline in CI without production data?* A small, committed sample of real rows that covers the edge cases, plus environment variables so everything runs in a temp folder.
 - *Why test in Docker too?* It proves the pipeline runs on a clean machine with only what's in the repo, so it doesn't depend on something left over on your laptop. This caught the missing `dbt/` folder.
 - *What would you add next?* Branch protection (no merging to `main` unless CI is green), and running only the dbt models changed in a pull request (`state:modified+`) once the project is bigger.
@@ -491,3 +493,50 @@ I broke the project five ways on purpose. Each was caught:
    - Stop it with Ctrl+C.
 
 Sources: [Florida Phoenix — Air travel snarls as cutbacks due to government shutdown begin](https://floridaphoenix.com/?p=235791); [AltexSoft — Major US airports start 10% flight reductions as shutdown continues](https://www.altexsoft.com/travel-industry-news/us-airports-start-10-flight-cuts-as-shutdown-continues/)
+
+---
+
+## Step 11 — Ship it: hosted dashboard, final README, portfolio page
+
+**The gap:** everything worked, but only on my laptop. A recruiter had nothing to click.
+
+**What I built**
+- **`make snapshot`** (`src/delta_pipeline/snapshot.py`): exports only the 17 columns the dashboard reads, from 4 tables, to zstd-compressed Parquet in `dashboard/snapshot/`.
+  - The result is **1.5 MB** vs 75 MB for the warehouse, so it can live in git.
+  - A small `_snapshot.json` records the flight count, months, export time and the dbt test results from that build. The hosted footer can then show the data checks even though dbt never runs there.
+- **The dashboard reads either source.** It uses the local warehouse if one exists; otherwise it uses the snapshot. Both expose the same `marts.*` tables (the snapshot as DuckDB views over Parquet), so the metric SQL is unchanged.
+- **Hosting files:**
+  - `dashboard/requirements.txt` has just the 5 packages the dashboard needs. Streamlit Community Cloud checks next to the app file before the repo root, so it never installs dbt or Dagster.
+  - The app adds `src/` to Python's path itself, since the host runs it without `make`.
+- **Final README:** findings, architecture diagram, test summary, design decisions, limitations.
+- **Portfolio page:** `projects/delta-pipeline/` on the portfolio site, with live dashboard, code and build log links.
+
+**Bugs this step caught**
+- **Non-deterministic ordering.** The test comparing snapshot and warehouse failed on the 442-row sample.
+  - Two airlines had the same on-time rate, so their order depended on how DuckDB happened to scan the data.
+  - The top-10 airports query had ties at the cutoff, so `LIMIT 10` could pick a different 10th airport.
+  - Fix: tie-breakers (`order by on_time_rate desc, carrier_code`). Invisible on the full month, real on any smaller slice.
+- **`.gitignore` silently excluded the snapshot.** `*.parquet` was ignored, and my first exception line had a trailing `# comment`. Git doesn't allow comments on the same line, so it treated the comment as part of the pattern, and the line matched nothing. A clean-folder copy (only what git would ship) showed the Parquet files missing. Fixed, and a test now fails if the snapshot isn't committed.
+- **Miscount corrected:** earlier steps said "50 dbt checks". dbt's `TOTAL=50` also counts the 2 seeds and 5 models it builds. The actual tests are **42** (39 data + 3 unit). The docs are corrected.
+- **Streamlit's default red accent** made the month filter look like an error. It's now the chart blue (`.streamlit/config.toml`).
+
+**Verified the way the host will run it:** a clean copy with no `data/` folder, a fresh Python 3.12 environment with only `dashboard/requirements.txt`, and `streamlit run dashboard/app.py` from the repo root. It rendered in light and dark mode with no errors.
+
+**Tests:** 53 pass. 8 are new:
+- the snapshot matches the warehouse for every metric
+- the snapshot metadata is right
+- the dashboard renders from the snapshot alone
+- the committed snapshot exists, matches its metadata and is under 20 MB
+
+**Interview questions to be ready for**
+- *How is the dashboard hosted if the warehouse isn't in git?* A small Parquet export of just what the dashboard reads, refreshed with `make snapshot` and checked against the warehouse by a test.
+- *How did ties break your test?* SQL doesn't guarantee row order without a full `ORDER BY`. With ties, two correct runs can differ, and `LIMIT` can pick different rows. Always add a tie-breaker when order matters.
+- *What would you change for production?* Write the marts to cloud storage (S3/GCS) on each pipeline run and have the dashboard read from there, instead of committing a snapshot.
+
+**Deploy (one time)**
+1. Go to share.streamlit.io and sign in with GitHub.
+2. Create app → repo `Stickyfingers22/delta-flight-pipeline`, branch `main`, main file `dashboard/app.py`.
+3. App URL: `delta-flight-pipeline`. Advanced settings → Python 3.12.
+4. Deploy. The first build takes a few minutes.
+
+To refresh the hosted data after loading new months: `make build`, then `make snapshot`, then commit and push.

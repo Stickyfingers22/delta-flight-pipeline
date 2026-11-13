@@ -96,7 +96,7 @@ def carrier_ranking(con, periods: list[str] | None = None) -> pd.DataFrame:
         join marts.dim_carrier c using (carrier_code)
         where {_where(periods)}
         group by all
-        order by on_time_rate desc
+        order by on_time_rate desc, c.carrier_code  -- tie-break so the order is stable
     """).df()
 
 
@@ -144,7 +144,7 @@ def airports(con, focus: str = FOCUS_DEFAULT, periods: list[str] | None = None, 
             from marts.fct_flights f
             where f.carrier_code = '{focus}' and {_where(periods)}
             group by 1
-            order by count(*) desc
+            order by count(*) desc, origin_airport_code  -- tie-break: LIMIT must pick the same airports every run
             limit {int(top)}
         )
         select

@@ -52,7 +52,7 @@ jobs:
       - name: pytest (ingest, idempotency, end-to-end, Dagster, dashboard)
         run: pytest -q
 
-      # Build the star schema from the sample and run all 50 dbt checks, so the dbt
+      # Build the star schema from the sample and run all 42 dbt tests, so the dbt
       # output is visible in the log even though the pytest tests already cover it.
       - name: dbt build on the sample
         env:

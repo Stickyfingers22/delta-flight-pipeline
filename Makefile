@@ -1,5 +1,5 @@
 # Short names for commands you'll run often. `make help` lists them.
-.PHONY: help setup test test-fast lint fixture dagster dashboard docker-test ingest ingest-file profile transform dbt-test build pipeline clean
+.PHONY: help setup test test-fast lint fixture dagster dashboard snapshot docker-test ingest ingest-file profile transform dbt-test build pipeline clean
 
 YEAR ?= 2025
 MONTH ?= 11
@@ -24,6 +24,7 @@ help:
 	@echo "pipeline     Load the file, then dbt build"
 	@echo "dagster      Start the Dagster UI at http://localhost:3000"
 	@echo "dashboard    Start the Streamlit dashboard at http://localhost:8501"
+	@echo "snapshot     Export the marts to dashboard/snapshot/ for the hosted dashboard (commit it)"
 	@echo "clean        Delete downloaded data and the local warehouse"
 
 setup:
@@ -75,6 +76,9 @@ dagster:
 dashboard:
 	PYTHONPATH=src .venv/bin/streamlit run dashboard/app.py
 	@# settings in .streamlit/config.toml (no email prompt, no telemetry)
+
+snapshot:
+	PYTHONPATH=src .venv/bin/python -m delta_pipeline.snapshot
 
 clean:
 	find data/raw data/warehouse -type f ! -name .gitkeep -delete

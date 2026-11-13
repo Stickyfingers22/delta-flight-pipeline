@@ -4,3 +4,6 @@ headless = true          # skip the first-run email prompt; open http://localhos
 
 [browser]
 gatherUsageStats = false # no usage telemetry
+
+[theme]
+primaryColor = "#2a78d6"  # match the chart blue; Streamlit's default red reads as "bad"

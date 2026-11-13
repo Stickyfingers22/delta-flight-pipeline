@@ -6,6 +6,8 @@ data/warehouse/*
 !data/raw/.gitkeep
 !data/warehouse/.gitkeep
 *.parquet
+# ...except the small committed copy the hosted dashboard reads
+!dashboard/snapshot/*.parquet
 *.csv
 !tests/fixtures/*.csv
 !dbt/seeds/*.csv
